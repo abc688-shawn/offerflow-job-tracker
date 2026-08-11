@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7f9" />
+    <title>OfferFlow - 求职进度管理</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body id="top">
+    <header class="site-header">
+      <div class="nav-shell">
+        <a class="brand" href="#top" aria-label="OfferFlow 首页">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Offer<span>Flow</span></span>
+        </a>
+
+        <nav class="primary-nav" aria-label="主导航">
+          <a class="active" href="#main">求职管理</a>
+          <a href="#calendar">面试日历</a>
+        </nav>
+
+        <div class="header-actions">
+          <div class="profile-summary" aria-label="本地工作区">
+            <span class="avatar">本</span>
+            <span class="profile-copy"><strong>本地工作区</strong><small>求职进度</small></span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page-shell">
+      <section class="page-intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">APPLICATION TRACKER</p>
+          <h1 id="page-title">求职进度</h1>
+          <p class="intro-copy">把每一次投递、推进和面试安排放在同一个视图里。</p>
+        </div>
+        <div class="intro-summary" aria-label="本周概览">
+          <div><strong id="week-interviews">0</strong><span>本周面试</span></div>
+          <div><strong id="active-applications">0</strong><span>正在推进</span></div>
+          <div><strong id="offer-count">0</strong><span>收到 Offer</span></div>
+        </div>
+      </section>
+
+      <section class="list-switcher" aria-label="投递列表">
+        <div id="list-tabs" class="list-tabs"></div>
+        <button id="new-list-button" class="new-list-button" type="button"><span aria-hidden="true">＋</span> 新建列表</button>
+      </section>
+
+      <section class="tracker-panel" aria-labelledby="tracker-title">
+        <div class="panel-heading">
+          <div>
+            <p class="panel-kicker">当前列表</p>
+            <h2 id="tracker-title">2026 秋招</h2>
+          </div>
+          <div class="panel-actions">
+            <span id="sync-status" class="sync-status" data-state="connecting" role="status" aria-live="polite">
+              <i aria-hidden="true"></i><span>连接中</span>
+            </span>
+            <button id="export-button" class="quiet-button" type="button">导出 CSV</button>
+            <button id="rename-list-button" class="quiet-button" type="button">重命名</button>
+            <button id="delete-list-button" class="quiet-button danger-text" type="button">删除列表</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <div id="stats-line" class="stats-line" aria-live="polite"></div>
+          <div class="filter-row">
+            <div id="filter-chips" class="filter-chips" aria-label="筛选记录"></div>
+            <div class="filter-tools">
+              <label class="search-box">
+                <span aria-hidden="true"></span>
+                <input id="search-input" type="search" placeholder="搜索公司或岗位" autocomplete="off" />
+              </label>
+              <label class="select-wrap">
+                <span class="sr-only">按性质筛选</span>
+                <select id="type-filter">
+                  <option value="all">全部性质</option>
+                  <option value="国央企">国央企</option>
+                  <option value="私企">私企</option>
+                  <option value="外企">外企</option>
+                  <option value="事业单位">事业单位</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="application-table">
+            <thead>
+              <tr>
+                <th scope="col" class="index-column">#</th>
+                <th scope="col">公司名称</th>
+                <th scope="col">性质</th>
+                <th scope="col">岗位名称</th>
+                <th scope="col">投递日期</th>
+                <th scope="col">投递状态</th>
+                <th scope="col">备注 / 官网</th>
+                <th scope="col">面试</th>
+                <th scope="col"><span class="sr-only">操作</span></th>
+              </tr>
+            </thead>
+            <tbody id="application-body"></tbody>
+          </table>
+          <div id="empty-state" class="empty-state" hidden>
+            <div class="empty-symbol" aria-hidden="true">⌕</div>
+            <strong>没有匹配的记录</strong>
+            <span>调整筛选条件，或添加一条新的投递记录。</span>
+          </div>
+        </div>
+
+        <div class="table-footer">
+          <button id="add-row-button" class="add-row-button" type="button"><span aria-hidden="true">＋</span> 添加一行</button>
+          <span id="visible-count" class="visible-count"></span>
+        </div>
+      </section>
+
+      <section id="calendar" class="calendar-panel" aria-labelledby="calendar-title">
+        <div class="calendar-heading">
+          <div>
+            <p class="panel-kicker">INTERVIEW SCHEDULE</p>
+            <h2 id="calendar-title">面试日历</h2>
+          </div>
+          <div class="calendar-controls">
+            <button id="prev-month" class="icon-button" type="button" aria-label="上个月" title="上个月">←</button>
+            <strong id="calendar-month"></strong>
+            <button id="next-month" class="icon-button" type="button" aria-label="下个月" title="下个月">→</button>
+            <button id="today-button" class="quiet-button" type="button">今天</button>
+          </div>
+        </div>
+        <div class="weekday-row" aria-hidden="true">
+          <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        </div>
+        <div id="calendar-grid" class="calendar-grid"></div>
+      </section>
+    </main>
+
+    <dialog id="list-dialog" class="app-dialog">
+      <form id="list-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">LIST</p>
+            <h2 id="list-dialog-title">新建列表</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog="list-dialog" aria-label="关闭" title="关闭">×</button>
+        </div>
+        <label class="form-field">
+          <span>列表名称</span>
+          <input id="list-name-input" name="listName" maxlength="24" required placeholder="例如：2027 春招" />
+        </label>
+        <div class="dialog-actions">
+          <button class="quiet-button" type="button" data-close-dialog="list-dialog">取消</button>
+          <button class="primary-button" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="interview-dialog" class="app-dialog interview-dialog">
+      <form id="interview-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">INTERVIEW</p>
+            <h2 id="interview-dialog-title">安排面试</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog="interview-dialog" aria-label="关闭" title="关闭">×</button>
+        </div>
+        <input id="interview-id" type="hidden" />
+        <div class="form-grid">
+          <label class="form-field">
+            <span>面试日期</span>
+            <input id="interview-date" type="date" required />
+          </label>
+          <label class="form-field">
+            <span>时间</span>
+            <input id="interview-time" type="time" required />
+          </label>
+          <label class="form-field">
+            <span>轮次</span>
+            <select id="interview-round">
+              <option>HR 沟通</option>
+              <option>一面</option>
+              <option>二面</option>
+              <option>三面</option>
+              <option>终面</option>
+            </select>
+          </label>
+          <label class="form-field">
+            <span>形式</span>
+            <select id="interview-mode">
+              <option>线上</option>
+              <option>线下</option>
+              <option>电话</option>
+            </select>
+          </label>
+        </div>
+        <label class="form-field">
+          <span>会议链接 / 地点</span>
+          <input id="interview-place" placeholder="腾讯会议、公司地址等" />
+        </label>
+        <div class="dialog-actions split-actions">
+          <button id="clear-interview-button" class="quiet-button danger-text" type="button">清除安排</button>
+          <div>
+            <button class="quiet-button" type="button" data-close-dialog="interview-dialog">取消</button>
+            <button class="primary-button" type="submit">保存安排</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <template id="row-template">
+      <tr>
+        <td class="row-index" data-label="#"></td>
+        <td data-label="公司名称"><input class="cell-input company-input" data-field="company" aria-label="公司名称" /></td>
+        <td data-label="性质">
+          <select class="cell-select" data-field="type" aria-label="公司性质">
+            <option>国央企</option><option>私企</option><option>外企</option><option>事业单位</option><option>其他</option>
+          </select>
+        </td>
+        <td data-label="岗位名称"><input class="cell-input" data-field="role" aria-label="岗位名称" /></td>
+        <td data-label="投递日期"><input class="cell-input date-input" data-field="date" type="date" aria-label="投递日期" /></td>
+        <td data-label="投递状态">
+          <select class="cell-select status-select" data-field="status" aria-label="投递状态">
+            <option>待投递</option><option>已投递</option><option>笔试</option><option>一面</option><option>二面</option><option>终面</option><option>Offer</option><option>已拒绝</option><option>已结束</option>
+          </select>
+        </td>
+        <td data-label="备注 / 官网"><input class="cell-input notes-input" data-field="notes" aria-label="备注或官网" placeholder="补充备注或链接" /></td>
+        <td class="interview-cell" data-label="面试">
+          <button class="schedule-button" type="button"></button>
+        </td>
+        <td class="delete-cell" data-label="操作">
+          <button class="delete-row-button" type="button" aria-label="删除此行" title="删除此行">×</button>
+        </td>
+      </tr>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
