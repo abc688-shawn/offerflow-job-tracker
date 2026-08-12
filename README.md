@@ -31,20 +31,9 @@ python3 server.py
 python3 server.py --host 127.0.0.1 --port 4173 --db ./data/offerflow.db
 ```
 
-## 部署到 Railway
+## 使用 Docker
 
-仓库包含生产用 `Dockerfile` 和 `railway.toml`。部署时必须同时配置持久卷和访问密码，否则 SQLite 数据会在重新部署时丢失，或服务会拒绝在公网启动。
-
-1. 在 Railway 新建项目，选择 **Deploy from GitHub repo** 并连接本仓库。
-2. 给 Web Service 添加 Volume，Mount Path 填写 `/data`。
-3. 在 Variables 中添加 `OFFERFLOW_PASSWORD`，使用唯一的强密码。可选添加 `OFFERFLOW_USERNAME`，默认用户名为 `offerflow`。
-4. 在服务 Settings 的 Networking 中生成公网域名。健康检查使用 `/api/health`，容器会自动读取 Railway 提供的 `PORT`。
-
-访问域名时浏览器会要求输入用户名和密码。应用只应运行一个副本，因为单个 SQLite 持久卷不能由多个服务副本共享。
-
-新域名无法读取 `localhost` 域名下的浏览器存储。若需要迁移本机现有数据，请先备份 `data/offerflow.db`；部署后可通过状态 API 导入，或把数据库文件上传到持久卷。不要先在新域名修改示例数据，以免与待迁移数据混淆。
-
-也可以在任意支持 Docker 和持久卷的平台运行：
+可以在任意支持 Docker 和持久卷的环境运行：
 
 ```bash
 docker build -t offerflow .
