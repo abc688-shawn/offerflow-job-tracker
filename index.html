@@ -3,60 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f6f7f9" />
+    <meta name="theme-color" content="#101315" />
     <title>OfferFlow - 求职进度管理</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body id="top">
-    <section id="auth-screen" class="auth-screen" aria-labelledby="auth-title">
-      <div class="auth-brand-block">
-        <a class="brand auth-brand" href="#" aria-label="OfferFlow">
-          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>Offer<span>Flow</span></span>
-        </a>
-        <div class="auth-statement">
-          <p class="eyebrow">PERSONAL WORKSPACE</p>
-          <h1>把每一次机会<br />稳稳向前推进。</h1>
-          <div class="auth-status-line" aria-hidden="true">
-            <span>已投递</span><i></i><span>面试中</span><i></i><span>Offer</span>
-          </div>
-        </div>
-        <small>OfferFlow 求职工作台</small>
-      </div>
-
-      <div class="auth-form-side">
-        <div class="auth-panel">
-          <div class="auth-mode-switch" role="tablist" aria-label="账号操作">
-            <button id="login-tab" class="active" type="button" role="tab" aria-selected="true">登录</button>
-            <button id="register-tab" type="button" role="tab" aria-selected="false">注册</button>
-          </div>
-          <div class="auth-heading">
-            <p class="panel-kicker">OFFERFLOW ACCOUNT</p>
-            <h2 id="auth-title">登录工作区</h2>
-          </div>
-          <form id="auth-form">
-            <label class="form-field">
-              <span>用户名</span>
-              <input id="auth-username" name="username" autocomplete="username" minlength="3" maxlength="32" required />
-            </label>
-            <label class="form-field">
-              <span>密码</span>
-              <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required />
-            </label>
-            <label id="password-confirm-field" class="form-field" hidden>
-              <span>确认密码</span>
-              <input id="auth-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="10" maxlength="128" />
-            </label>
-            <label id="invite-field" class="form-field" hidden>
-              <span>邀请码</span>
-              <input id="auth-invite-code" name="inviteCode" autocomplete="off" />
-            </label>
-            <p id="auth-error" class="auth-error" role="alert" aria-live="polite"></p>
-            <button id="auth-submit" class="primary-button auth-submit" type="submit">登录</button>
-          </form>
-        </div>
-      </div>
-    </section>
+    <div id="auth-root"></div>
 
     <div id="app-shell" hidden>
     <header class="site-header">
@@ -87,7 +39,7 @@
         <div>
           <p class="eyebrow">APPLICATION TRACKER</p>
           <h1 id="page-title">求职进度</h1>
-          <p class="intro-copy">把每一次投递、推进和面试安排放在同一个视图里。</p>
+          <p class="intro-copy">把每一次机会稳稳向前推进</p>
         </div>
         <div class="intro-summary" aria-label="本周概览">
           <div><strong id="week-interviews">0</strong><span>本周面试</span></div>
@@ -188,6 +140,11 @@
         </div>
         <div id="calendar-grid" class="calendar-grid"></div>
       </section>
+
+      <footer class="page-encouragement">
+        <i aria-hidden="true"></i>
+        <p>认真走过的每一步 都在靠近答案</p>
+      </footer>
     </main>
 
     <dialog id="list-dialog" class="app-dialog">
@@ -320,6 +277,7 @@
       </tr>
     </template>
 
+    <script src="auth-react.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

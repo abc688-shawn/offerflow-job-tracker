@@ -9,7 +9,6 @@ function createEmptyState() {
 let state = createEmptyState();
 let currentUser = null;
 let storageKey = null;
-let authMode = "login";
 let authConfig = {
   enabled: true,
   inviteRequired: false,
@@ -30,20 +29,7 @@ const ui = {
 };
 
 const els = {
-  authScreen: document.querySelector("#auth-screen"),
   appShell: document.querySelector("#app-shell"),
-  authForm: document.querySelector("#auth-form"),
-  authTitle: document.querySelector("#auth-title"),
-  authUsername: document.querySelector("#auth-username"),
-  authPassword: document.querySelector("#auth-password"),
-  authPasswordConfirm: document.querySelector("#auth-password-confirm"),
-  authInviteCode: document.querySelector("#auth-invite-code"),
-  authError: document.querySelector("#auth-error"),
-  authSubmit: document.querySelector("#auth-submit"),
-  loginTab: document.querySelector("#login-tab"),
-  registerTab: document.querySelector("#register-tab"),
-  inviteField: document.querySelector("#invite-field"),
-  passwordConfirmField: document.querySelector("#password-confirm-field"),
   profileAvatar: document.querySelector("#profile-avatar"),
   profileUsername: document.querySelector("#profile-username"),
   logoutButton: document.querySelector("#logout-button"),
@@ -596,28 +582,6 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
-function setAuthMode(mode) {
-  authMode = mode;
-  const registering = mode === "register";
-  els.loginTab.classList.toggle("active", !registering);
-  els.registerTab.classList.toggle("active", registering);
-  els.loginTab.setAttribute("aria-selected", String(!registering));
-  els.registerTab.setAttribute("aria-selected", String(registering));
-  els.authTitle.textContent = registering
-    ? (authConfig.setupRequired ? "设置工作区账号" : "创建工作区")
-    : "登录工作区";
-  els.authSubmit.textContent = registering
-    ? (authConfig.setupRequired ? "完成设置" : "创建账号")
-    : "登录";
-  els.authPassword.autocomplete = registering ? "new-password" : "current-password";
-  els.authPassword.minLength = registering ? 10 : 1;
-  els.passwordConfirmField.hidden = !registering;
-  els.authPasswordConfirm.required = registering;
-  els.inviteField.hidden = !registering || !authConfig.inviteRequired || authConfig.setupRequired;
-  els.authInviteCode.required = !els.inviteField.hidden;
-  els.authError.textContent = "";
-}
-
 function showAuthScreen(message = "") {
   currentUser = null;
   storageKey = null;
@@ -626,8 +590,11 @@ function showAuthScreen(message = "") {
   pendingBackendSnapshot = null;
   state = createEmptyState();
   els.appShell.hidden = true;
-  els.authScreen.hidden = false;
-  els.authError.textContent = message;
+  window.OfferFlowAuth?.show({
+    ...authConfig,
+    message,
+    mode: authConfig.setupRequired ? "register" : "login"
+  });
   [els.listDialog, els.interviewDialog].forEach((dialog) => {
     if (dialog.open) dialog.close();
   });
@@ -643,43 +610,10 @@ async function activateSession(user) {
   els.profileUsername.textContent = user.username;
   els.profileAvatar.textContent = Array.from(user.username)[0]?.toUpperCase() || "个";
   els.passwordButton.hidden = !authConfig.passwordChangeEnabled;
-  els.authScreen.hidden = true;
+  window.OfferFlowAuth?.hide();
   els.appShell.hidden = false;
   await connectBackend();
   render();
-}
-
-async function submitAuth(event) {
-  event.preventDefault();
-  els.authError.textContent = "";
-  els.authSubmit.disabled = true;
-  const payload = {
-    username: els.authUsername.value.trim(),
-    password: els.authPassword.value,
-    inviteCode: els.authInviteCode.value.trim()
-  };
-  if (authMode === "register" && payload.password !== els.authPasswordConfirm.value) {
-    els.authError.textContent = "两次输入的密码不一致";
-    els.authSubmit.disabled = false;
-    return;
-  }
-  try {
-    const response = await fetch(`/api/auth/${authMode}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-OfferFlow-CSRF": "1" },
-      body: JSON.stringify(payload)
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || "暂时无法完成操作");
-    authConfig.setupRequired = false;
-    authConfig.passwordChangeEnabled = Boolean(result.passwordChangeEnabled);
-    els.authForm.reset();
-    await activateSession(result.user);
-  } catch (error) {
-    els.authError.textContent = error.message;
-  } finally {
-    els.authSubmit.disabled = false;
-  }
 }
 
 async function logout() {
@@ -695,9 +629,8 @@ async function logout() {
     });
   } finally {
     els.logoutButton.disabled = false;
+    authConfig.setupRequired = false;
     showAuthScreen();
-    setAuthMode("login");
-    els.authUsername.focus();
   }
 }
 
@@ -752,16 +685,13 @@ async function bootstrap() {
       setupRequired: Boolean(payload.setupRequired),
       passwordChangeEnabled: Boolean(payload.passwordChangeEnabled)
     };
-    els.registerTab.hidden = !authConfig.enabled && !authConfig.setupRequired;
     if (payload.authenticated && payload.user) {
       await activateSession(payload.user);
       return;
     }
     showAuthScreen();
-    setAuthMode(authConfig.setupRequired ? "register" : "login");
   } catch (error) {
     console.warn("Could not check account session", error);
-    setAuthMode("login");
     showAuthScreen("服务暂时不可用，请稍后重试");
   }
 }
@@ -824,9 +754,13 @@ document.querySelector("#new-list-button").addEventListener("click", () => openL
 document.querySelector("#rename-list-button").addEventListener("click", () => openListDialog("rename"));
 document.querySelector("#delete-list-button").addEventListener("click", deleteCurrentList);
 document.querySelector("#export-button").addEventListener("click", exportCsv);
-els.authForm.addEventListener("submit", submitAuth);
-els.loginTab.addEventListener("click", () => setAuthMode("login"));
-els.registerTab.addEventListener("click", () => setAuthMode("register"));
+window.addEventListener("offerflow:auth-success", (event) => {
+  const { user, passwordChangeEnabled } = event.detail || {};
+  if (!user) return;
+  authConfig.setupRequired = false;
+  authConfig.passwordChangeEnabled = Boolean(passwordChangeEnabled);
+  void activateSession(user);
+});
 els.logoutButton.addEventListener("click", () => void logout());
 els.passwordButton.addEventListener("click", openPasswordDialog);
 els.passwordForm.addEventListener("submit", changeAccountPassword);

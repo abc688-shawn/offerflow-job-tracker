@@ -5,4 +5,5 @@ README.md
 data
 tests
 __pycache__
+node_modules
 *.py[cod]

@@ -396,6 +396,7 @@ class HttpServerTests(unittest.TestCase):
 
     def test_only_public_app_assets_are_served(self):
         self.assertEqual(self.request("GET", "/app.js")[0], 200)
+        self.assertEqual(self.request("GET", "/auth-react.js")[0], 200)
         self.assertEqual(self.request("GET", "/server.py")[0], 404)
         self.assertEqual(self.request("GET", "/.git/config")[0], 404)
 

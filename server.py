@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = APP_DIR / "data" / "offerflow.db"
 MAX_BODY_BYTES = 2 * 1024 * 1024
-STATIC_PATHS = {"/", "/index.html", "/styles.css", "/app.js"}
+STATIC_PATHS = {"/", "/index.html", "/styles.css", "/auth-react.js", "/app.js"}
 SESSION_COOKIE = "offerflow_session"
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 PASSWORD_ITERATIONS = 600_000

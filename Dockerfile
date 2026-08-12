@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY index.html styles.css app.js server.py docker-entrypoint.sh ./
+COPY index.html styles.css auth-react.js app.js server.py docker-entrypoint.sh ./
 
 RUN mkdir -p /data \
     && groupadd --system offerflow \

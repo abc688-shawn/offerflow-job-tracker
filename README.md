@@ -16,7 +16,7 @@ OfferFlow 是一个轻量的求职进度管理应用，用表格跟踪投递状�
 
 ## 快速开始
 
-要求 Python 3.9 或更高版本，不需要安装第三方依赖。
+运行已构建版本只要求 Python 3.9 或更高版本，不需要安装第三方依赖。
 
 ```bash
 git clone git@github.com:Smileteeth7/offerflow-job-tracker.git
@@ -25,6 +25,13 @@ python3 server.py
 ```
 
 打开 [http://localhost:4173](http://localhost:4173)。
+
+修改 React 登录页后，使用 Node.js 20 或更高版本重新生成前端 bundle：
+
+```bash
+npm ci
+npm run build
+```
 
 首次打开时注册账号。每个账号拥有独立的清单、申请记录、同步版本和浏览器离线缓存。
 
@@ -114,7 +121,9 @@ sudo /opt/offerflow/bin/offerflow-users-sync
 
 ```text
 .
-├── index.html          # 页面结构
+├── src/auth.jsx        # React 登录入口源码
+├── auth-react.js       # 登录页生产 bundle
+├── index.html          # 工作台页面结构与 React 挂载点
 ├── styles.css          # 视觉与响应式布局
 ├── app.js              # 前端状态、交互与同步逻辑
 ├── server.py           # 静态服务与 SQLite JSON API
@@ -143,4 +152,4 @@ node --check app.js
 
 ## 隐私
 
-密码使用 PBKDF2-SHA256 加盐哈希保存，登录态使用 `HttpOnly`、`SameSite=Lax` Cookie，写操作要求同源校验请求头。生产环境必须使用 HTTPS，并建议配置 `OFFERFLOW_REGISTRATION_CODE`。服务器仅公开三个前端文件，数据库、后端源码和 Git 元数据不会由静态服务器提供。请勿把 `data/offerflow.db`、导出的 CSV 或包含真实会议链接的文件提交到公开仓库。
+密码使用 PBKDF2-SHA256 加盐哈希保存，登录态使用 `HttpOnly`、`SameSite=Lax` Cookie，写操作要求同源校验请求头。生产环境必须使用 HTTPS，并建议配置 `OFFERFLOW_REGISTRATION_CODE`。服务器仅公开页面所需的前端文件，数据库、后端源码和 Git 元数据不会由静态服务器提供。请勿把 `data/offerflow.db`、导出的 CSV 或包含真实会议链接的文件提交到公开仓库。
