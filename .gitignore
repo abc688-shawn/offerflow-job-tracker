@@ -5,3 +5,5 @@ data/*.db-wal
 __pycache__/
 *.py[cod]
 .pytest_cache/
+deploy/offerflow-users.json
+deploy/offerflow.env

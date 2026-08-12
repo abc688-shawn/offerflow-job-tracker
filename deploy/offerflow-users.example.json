@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "users": [
+    {
+      "key": "owner",
+      "username": "replace-with-owner-name",
+      "password": "replace-with-a-strong-password",
+      "enabled": true
+    },
+    {
+      "key": "colleague-1",
+      "username": "replace-with-username",
+      "password": "replace-with-a-strong-password",
+      "enabled": true
+    }
+  ]
+}

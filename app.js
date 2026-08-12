@@ -1,23 +1,21 @@
-const STORAGE_KEY = "offerflow-data-v1";
+function createEmptyState() {
+  const listId = uniqueId("list");
+  return {
+    activeListId: listId,
+    lists: [{ id: listId, name: "我的求职记录", applications: [] }]
+  };
+}
 
-const seedState = {
-  activeListId: "autumn-2026",
-  lists: [
-    {
-      id: "autumn-2026",
-      name: "2026 秋招",
-      applications: [
-        { id: "app-1", company: "星河科技", type: "私企", role: "数据平台工程师", date: "2026-07-20", status: "一面", notes: "校招官网", interview: { date: "2026-08-12", time: "10:00", round: "一面", mode: "线上", place: "视频会议" } },
-        { id: "app-2", company: "城市数据集团", type: "国央企", role: "数据治理工程师", date: "2026-07-16", status: "二面", notes: "校园招聘", interview: { date: "2026-08-14", time: "14:30", round: "二面", mode: "线上", place: "视频会议" } },
-        { id: "app-3", company: "Northwind Cloud", type: "外企", role: "Backend Engineer", date: "2026-07-15", status: "Offer", notes: "英文简历", interview: null },
-        { id: "app-4", company: "云杉智能", type: "私企", role: "后端工程师", date: "2026-07-24", status: "笔试", notes: "内推", interview: null },
-        { id: "app-5", company: "远帆研究院", type: "事业单位", role: "数据研发工程师", date: "2026-07-30", status: "已投递", notes: "官网投递", interview: null }
-      ]
-    }
-  ]
+let state = createEmptyState();
+let currentUser = null;
+let storageKey = null;
+let authMode = "login";
+let authConfig = {
+  enabled: true,
+  inviteRequired: false,
+  setupRequired: false,
+  passwordChangeEnabled: false
 };
-
-let state = loadLocalState();
 let backendReady = false;
 let backendRevision = 0;
 let pendingBackendSnapshot = null;
@@ -32,6 +30,31 @@ const ui = {
 };
 
 const els = {
+  authScreen: document.querySelector("#auth-screen"),
+  appShell: document.querySelector("#app-shell"),
+  authForm: document.querySelector("#auth-form"),
+  authTitle: document.querySelector("#auth-title"),
+  authUsername: document.querySelector("#auth-username"),
+  authPassword: document.querySelector("#auth-password"),
+  authPasswordConfirm: document.querySelector("#auth-password-confirm"),
+  authInviteCode: document.querySelector("#auth-invite-code"),
+  authError: document.querySelector("#auth-error"),
+  authSubmit: document.querySelector("#auth-submit"),
+  loginTab: document.querySelector("#login-tab"),
+  registerTab: document.querySelector("#register-tab"),
+  inviteField: document.querySelector("#invite-field"),
+  passwordConfirmField: document.querySelector("#password-confirm-field"),
+  profileAvatar: document.querySelector("#profile-avatar"),
+  profileUsername: document.querySelector("#profile-username"),
+  logoutButton: document.querySelector("#logout-button"),
+  passwordButton: document.querySelector("#password-button"),
+  passwordDialog: document.querySelector("#password-dialog"),
+  passwordForm: document.querySelector("#password-form"),
+  currentPassword: document.querySelector("#current-password"),
+  newPassword: document.querySelector("#new-password"),
+  newPasswordConfirm: document.querySelector("#new-password-confirm"),
+  passwordError: document.querySelector("#password-error"),
+  passwordSubmit: document.querySelector("#password-submit"),
   listTabs: document.querySelector("#list-tabs"),
   trackerTitle: document.querySelector("#tracker-title"),
   statsLine: document.querySelector("#stats-line"),
@@ -73,13 +96,14 @@ const filterDefinitions = [
 ];
 
 function loadLocalState() {
+  if (!storageKey) return createEmptyState();
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const saved = JSON.parse(localStorage.getItem(storageKey));
     if (saved?.lists?.length) return saved;
   } catch (error) {
     console.warn("Could not load saved data", error);
   }
-  return structuredClone(seedState);
+  return createEmptyState();
 }
 
 function setSyncStatus(status, label) {
@@ -92,7 +116,8 @@ async function persistBackend(snapshot) {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
-      "If-Match": String(backendRevision)
+      "If-Match": String(backendRevision),
+      "X-OfferFlow-CSRF": "1"
     },
     body: JSON.stringify(snapshot),
     keepalive: true
@@ -111,7 +136,7 @@ function applyBackendState(payload) {
   if (!payload.initialized || !payload.state?.lists?.length) return false;
   backendRevision = payload.revision;
   state = payload.state;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (storageKey) localStorage.setItem(storageKey, JSON.stringify(state));
   return true;
 }
 
@@ -128,7 +153,9 @@ async function flushBackendQueue() {
   } catch (error) {
     console.warn("Could not save to SQLite backend", error);
     pendingBackendSnapshot = null;
-    if (error.status === 409 && applyBackendState(error.payload.latest)) {
+    if (error.status === 401) {
+      showAuthScreen("登录已失效，请重新登录");
+    } else if (error.status === 409 && applyBackendState(error.payload.latest)) {
       setSyncStatus("saved", "已同步新版本");
       render();
       showToast("另一台设备已更新数据，已载入最新版本");
@@ -144,7 +171,7 @@ async function flushBackendQueue() {
 
 function saveState() {
   const serialized = JSON.stringify(state);
-  localStorage.setItem(STORAGE_KEY, serialized);
+  if (storageKey) localStorage.setItem(storageKey, serialized);
   if (!backendReady) {
     setSyncStatus("local", "仅本地保存");
     return;
@@ -158,6 +185,10 @@ async function connectBackend() {
   setSyncStatus("connecting", "连接中");
   try {
     const response = await fetch("/api/state", { cache: "no-store" });
+    if (response.status === 401) {
+      showAuthScreen("登录已失效，请重新登录");
+      return;
+    }
     if (!response.ok) throw new Error(`Backend returned status ${response.status}`);
     const payload = await response.json();
     backendReady = true;
@@ -179,9 +210,13 @@ async function connectBackend() {
 }
 
 async function refreshBackendState() {
-  if (!backendReady || backendSyncRunning || pendingBackendSnapshot) return;
+  if (!currentUser || !backendReady || backendSyncRunning || pendingBackendSnapshot) return;
   try {
     const response = await fetch("/api/state", { cache: "no-store" });
+    if (response.status === 401) {
+      showAuthScreen("登录已失效，请重新登录");
+      return;
+    }
     if (!response.ok) throw new Error(`Backend returned status ${response.status}`);
     const payload = await response.json();
     if (payload.revision > backendRevision && applyBackendState(payload)) {
@@ -561,6 +596,176 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
+function setAuthMode(mode) {
+  authMode = mode;
+  const registering = mode === "register";
+  els.loginTab.classList.toggle("active", !registering);
+  els.registerTab.classList.toggle("active", registering);
+  els.loginTab.setAttribute("aria-selected", String(!registering));
+  els.registerTab.setAttribute("aria-selected", String(registering));
+  els.authTitle.textContent = registering
+    ? (authConfig.setupRequired ? "设置工作区账号" : "创建工作区")
+    : "登录工作区";
+  els.authSubmit.textContent = registering
+    ? (authConfig.setupRequired ? "完成设置" : "创建账号")
+    : "登录";
+  els.authPassword.autocomplete = registering ? "new-password" : "current-password";
+  els.authPassword.minLength = registering ? 10 : 1;
+  els.passwordConfirmField.hidden = !registering;
+  els.authPasswordConfirm.required = registering;
+  els.inviteField.hidden = !registering || !authConfig.inviteRequired || authConfig.setupRequired;
+  els.authInviteCode.required = !els.inviteField.hidden;
+  els.authError.textContent = "";
+}
+
+function showAuthScreen(message = "") {
+  currentUser = null;
+  storageKey = null;
+  backendReady = false;
+  backendRevision = 0;
+  pendingBackendSnapshot = null;
+  state = createEmptyState();
+  els.appShell.hidden = true;
+  els.authScreen.hidden = false;
+  els.authError.textContent = message;
+  [els.listDialog, els.interviewDialog].forEach((dialog) => {
+    if (dialog.open) dialog.close();
+  });
+}
+
+async function activateSession(user) {
+  currentUser = user;
+  storageKey = `offerflow-data-v2:${user.id}`;
+  state = loadLocalState();
+  backendReady = false;
+  backendRevision = 0;
+  pendingBackendSnapshot = null;
+  els.profileUsername.textContent = user.username;
+  els.profileAvatar.textContent = Array.from(user.username)[0]?.toUpperCase() || "个";
+  els.passwordButton.hidden = !authConfig.passwordChangeEnabled;
+  els.authScreen.hidden = true;
+  els.appShell.hidden = false;
+  await connectBackend();
+  render();
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  els.authError.textContent = "";
+  els.authSubmit.disabled = true;
+  const payload = {
+    username: els.authUsername.value.trim(),
+    password: els.authPassword.value,
+    inviteCode: els.authInviteCode.value.trim()
+  };
+  if (authMode === "register" && payload.password !== els.authPasswordConfirm.value) {
+    els.authError.textContent = "两次输入的密码不一致";
+    els.authSubmit.disabled = false;
+    return;
+  }
+  try {
+    const response = await fetch(`/api/auth/${authMode}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-OfferFlow-CSRF": "1" },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "暂时无法完成操作");
+    authConfig.setupRequired = false;
+    authConfig.passwordChangeEnabled = Boolean(result.passwordChangeEnabled);
+    els.authForm.reset();
+    await activateSession(result.user);
+  } catch (error) {
+    els.authError.textContent = error.message;
+  } finally {
+    els.authSubmit.disabled = false;
+  }
+}
+
+async function logout() {
+  els.logoutButton.disabled = true;
+  try {
+    await flushBackendQueue();
+    while (backendSyncRunning) {
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { "X-OfferFlow-CSRF": "1" }
+    });
+  } finally {
+    els.logoutButton.disabled = false;
+    showAuthScreen();
+    setAuthMode("login");
+    els.authUsername.focus();
+  }
+}
+
+function openPasswordDialog() {
+  els.passwordForm.reset();
+  els.passwordError.textContent = "";
+  els.passwordDialog.showModal();
+  requestAnimationFrame(() => els.currentPassword.focus());
+}
+
+async function changeAccountPassword(event) {
+  event.preventDefault();
+  els.passwordError.textContent = "";
+  if (els.newPassword.value !== els.newPasswordConfirm.value) {
+    els.passwordError.textContent = "两次输入的新密码不一致";
+    return;
+  }
+  els.passwordSubmit.disabled = true;
+  try {
+    const response = await fetch("/api/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-OfferFlow-CSRF": "1" },
+      body: JSON.stringify({
+        currentPassword: els.currentPassword.value,
+        newPassword: els.newPassword.value
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      els.passwordDialog.close();
+      showAuthScreen("登录已失效，请重新登录");
+      return;
+    }
+    if (!response.ok) throw new Error(payload.error || "密码更新失败");
+    els.passwordDialog.close();
+    showToast("密码已更新，其他设备需要重新登录");
+  } catch (error) {
+    els.passwordError.textContent = error.message;
+  } finally {
+    els.passwordSubmit.disabled = false;
+  }
+}
+
+async function bootstrap() {
+  try {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Session check failed with status ${response.status}`);
+    const payload = await response.json();
+    authConfig = {
+      enabled: payload.registration?.enabled !== false,
+      inviteRequired: Boolean(payload.registration?.inviteRequired),
+      setupRequired: Boolean(payload.setupRequired),
+      passwordChangeEnabled: Boolean(payload.passwordChangeEnabled)
+    };
+    els.registerTab.hidden = !authConfig.enabled && !authConfig.setupRequired;
+    if (payload.authenticated && payload.user) {
+      await activateSession(payload.user);
+      return;
+    }
+    showAuthScreen();
+    setAuthMode(authConfig.setupRequired ? "register" : "login");
+  } catch (error) {
+    console.warn("Could not check account session", error);
+    setAuthMode("login");
+    showAuthScreen("服务暂时不可用，请稍后重试");
+  }
+}
+
 els.listTabs.addEventListener("click", (event) => {
   const button = event.target.closest("[data-list-id]");
   if (!button) return;
@@ -619,6 +824,12 @@ document.querySelector("#new-list-button").addEventListener("click", () => openL
 document.querySelector("#rename-list-button").addEventListener("click", () => openListDialog("rename"));
 document.querySelector("#delete-list-button").addEventListener("click", deleteCurrentList);
 document.querySelector("#export-button").addEventListener("click", exportCsv);
+els.authForm.addEventListener("submit", submitAuth);
+els.loginTab.addEventListener("click", () => setAuthMode("login"));
+els.registerTab.addEventListener("click", () => setAuthMode("register"));
+els.logoutButton.addEventListener("click", () => void logout());
+els.passwordButton.addEventListener("click", openPasswordDialog);
+els.passwordForm.addEventListener("submit", changeAccountPassword);
 els.listForm.addEventListener("submit", saveList);
 els.interviewForm.addEventListener("submit", saveInterview);
 els.clearInterview.addEventListener("click", clearInterview);
@@ -650,7 +861,7 @@ document.querySelector("#today-button").addEventListener("click", () => {
   renderCalendar();
 });
 
-[els.listDialog, els.interviewDialog].forEach((dialog) => {
+[els.listDialog, els.interviewDialog, els.passwordDialog].forEach((dialog) => {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog.close();
   });
@@ -660,7 +871,7 @@ if (!["", "#top", "#main", "#calendar"].includes(window.location.hash)) {
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#main`);
 }
 
-connectBackend().finally(render);
+void bootstrap();
 window.setInterval(() => void refreshBackendState(), 30000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void refreshBackendState();

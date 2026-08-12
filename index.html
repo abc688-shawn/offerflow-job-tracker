@@ -8,6 +8,57 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body id="top">
+    <section id="auth-screen" class="auth-screen" aria-labelledby="auth-title">
+      <div class="auth-brand-block">
+        <a class="brand auth-brand" href="#" aria-label="OfferFlow">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Offer<span>Flow</span></span>
+        </a>
+        <div class="auth-statement">
+          <p class="eyebrow">PERSONAL WORKSPACE</p>
+          <h1>把每一次机会<br />稳稳向前推进。</h1>
+          <div class="auth-status-line" aria-hidden="true">
+            <span>已投递</span><i></i><span>面试中</span><i></i><span>Offer</span>
+          </div>
+        </div>
+        <small>OfferFlow 求职工作台</small>
+      </div>
+
+      <div class="auth-form-side">
+        <div class="auth-panel">
+          <div class="auth-mode-switch" role="tablist" aria-label="账号操作">
+            <button id="login-tab" class="active" type="button" role="tab" aria-selected="true">登录</button>
+            <button id="register-tab" type="button" role="tab" aria-selected="false">注册</button>
+          </div>
+          <div class="auth-heading">
+            <p class="panel-kicker">OFFERFLOW ACCOUNT</p>
+            <h2 id="auth-title">登录工作区</h2>
+          </div>
+          <form id="auth-form">
+            <label class="form-field">
+              <span>用户名</span>
+              <input id="auth-username" name="username" autocomplete="username" minlength="3" maxlength="32" required />
+            </label>
+            <label class="form-field">
+              <span>密码</span>
+              <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required />
+            </label>
+            <label id="password-confirm-field" class="form-field" hidden>
+              <span>确认密码</span>
+              <input id="auth-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="10" maxlength="128" />
+            </label>
+            <label id="invite-field" class="form-field" hidden>
+              <span>邀请码</span>
+              <input id="auth-invite-code" name="inviteCode" autocomplete="off" />
+            </label>
+            <p id="auth-error" class="auth-error" role="alert" aria-live="polite"></p>
+            <button id="auth-submit" class="primary-button auth-submit" type="submit">登录</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <div id="app-shell" hidden>
     <header class="site-header">
       <div class="nav-shell">
         <a class="brand" href="#top" aria-label="OfferFlow 首页">
@@ -22,9 +73,11 @@
 
         <div class="header-actions">
           <div class="profile-summary" aria-label="个人工作区">
-            <span class="avatar">个</span>
-            <span class="profile-copy"><strong>个人工作区</strong><small>求职进度</small></span>
+            <span id="profile-avatar" class="avatar">个</span>
+            <span class="profile-copy"><strong id="profile-username">个人工作区</strong><small>个人工作区</small></span>
           </div>
+          <button id="password-button" class="quiet-button account-button" type="button">修改密码</button>
+          <button id="logout-button" class="quiet-button logout-button" type="button">退出登录</button>
         </div>
       </div>
     </header>
@@ -209,7 +262,37 @@
       </form>
     </dialog>
 
+    <dialog id="password-dialog" class="app-dialog password-dialog">
+      <form id="password-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">ACCOUNT SECURITY</p>
+            <h2>修改密码</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-dialog="password-dialog" aria-label="关闭" title="关闭">×</button>
+        </div>
+        <label class="form-field">
+          <span>当前密码</span>
+          <input id="current-password" type="password" autocomplete="current-password" required />
+        </label>
+        <label class="form-field">
+          <span>新密码</span>
+          <input id="new-password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required />
+        </label>
+        <label class="form-field">
+          <span>确认新密码</span>
+          <input id="new-password-confirm" type="password" autocomplete="new-password" minlength="10" maxlength="128" required />
+        </label>
+        <p id="password-error" class="auth-error" role="alert" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button class="quiet-button" type="button" data-close-dialog="password-dialog">取消</button>
+          <button id="password-submit" class="primary-button" type="submit">更新密码</button>
+        </div>
+      </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </div>
 
     <template id="row-template">
       <tr>

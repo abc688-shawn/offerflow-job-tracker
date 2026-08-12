@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Run this command with sudo." >&2
+    exit 1
+fi
+
+runuser -u offerflow -- /usr/bin/python3 /opt/offerflow/app/backup_offerflow.py
+
+service_was_active=false
+if systemctl is-active --quiet offerflow; then
+    service_was_active=true
+    systemctl stop offerflow
+fi
+
+restore_service() {
+    for database_file in \
+        /opt/offerflow/data/offerflow.db \
+        /opt/offerflow/data/offerflow.db-shm \
+        /opt/offerflow/data/offerflow.db-wal
+    do
+        if [ -e "$database_file" ]; then
+            chown offerflow:offerflow "$database_file"
+            chmod 600 "$database_file"
+        fi
+    done
+    if [ "$service_was_active" = true ]; then
+        systemctl start offerflow
+    fi
+}
+trap restore_service EXIT
+
+runuser -u offerflow -- /usr/bin/python3 /opt/offerflow/app/manage_users.py \
+    --config /opt/offerflow/offerflow-users.json \
+    --db /opt/offerflow/data/offerflow.db
