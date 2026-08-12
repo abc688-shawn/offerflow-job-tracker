@@ -56,6 +56,10 @@ docker run --rm -p 8080:8080 \
 
 打开 [http://localhost:8080](http://localhost:8080)，用户名为 `offerflow`。
 
+## 部署到 Ubuntu 云服务器
+
+`deploy/` 包含适用于 Ubuntu 24.04 的 `systemd`、Nginx 和每日 SQLite 备份配置。推荐让 OfferFlow 仅监听 `127.0.0.1:4173`，由 Nginx 在 `80/443` 端口提供公网入口，并使用 Certbot 配置 HTTPS。应用目录为 `/opt/offerflow/app`，数据库位于 `/opt/offerflow/data/offerflow.db`，最近 14 天的在线备份位于 `/opt/offerflow/backups`。
+
 ## 数据存储
 
 默认数据库位于 `data/offerflow.db`，已通过 `.gitignore` 排除，不会被提交到 GitHub。

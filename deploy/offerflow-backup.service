@@ -1,0 +1,13 @@
+[Unit]
+Description=Back up OfferFlow SQLite database
+
+[Service]
+Type=oneshot
+User=offerflow
+Group=offerflow
+ExecStart=/usr/bin/python3 /opt/offerflow/app/backup_offerflow.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/offerflow/data /opt/offerflow/backups

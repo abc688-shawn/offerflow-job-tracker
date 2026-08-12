@@ -1,0 +1,22 @@
+[Unit]
+Description=OfferFlow job tracker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=offerflow
+Group=offerflow
+WorkingDirectory=/opt/offerflow/app
+EnvironmentFile=/etc/offerflow.env
+ExecStart=/usr/bin/python3 /opt/offerflow/app/server.py --host 127.0.0.1 --port 4173 --db /opt/offerflow/data/offerflow.db
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/offerflow/data
+
+[Install]
+WantedBy=multi-user.target
