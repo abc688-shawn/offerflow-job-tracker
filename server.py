@@ -2,7 +2,11 @@
 """OfferFlow local server: static files plus a SQLite-backed state API."""
 
 import argparse
+import base64
+import binascii
+import hmac
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -13,6 +17,13 @@ from urllib.parse import urlparse
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = APP_DIR / "data" / "offerflow.db"
 MAX_BODY_BYTES = 2 * 1024 * 1024
+STATIC_PATHS = {"/", "/index.html", "/styles.css", "/app.js"}
+
+
+class StateConflictError(Exception):
+    def __init__(self, current_revision):
+        super().__init__("state was changed by another device")
+        self.current_revision = current_revision
 
 
 def connect(db_path):
@@ -64,11 +75,16 @@ def initialize_database(db_path):
 
 def read_state(db_path):
     with connect(db_path) as connection:
+        connection.execute("BEGIN")
+        revision_row = connection.execute(
+            "SELECT value FROM settings WHERE key = 'revision'"
+        ).fetchone()
+        revision = int(revision_row["value"]) if revision_row else 0
         list_rows = connection.execute(
             "SELECT id, name FROM lists ORDER BY position, rowid"
         ).fetchall()
         if not list_rows:
-            return {"initialized": False, "state": None}
+            return {"initialized": False, "revision": revision, "state": None}
 
         active_row = connection.execute(
             "SELECT value FROM settings WHERE key = 'active_list_id'"
@@ -120,6 +136,7 @@ def read_state(db_path):
             active_list_id = lists[0]["id"]
         return {
             "initialized": True,
+            "revision": revision,
             "state": {"activeListId": active_list_id, "lists": lists},
         }
 
@@ -205,10 +222,17 @@ def validate_state(payload):
     return {"activeListId": active_list_id, "lists": validated_lists}
 
 
-def write_state(db_path, payload):
+def write_state(db_path, payload, expected_revision=None):
     state = validate_state(payload)
     with connect(db_path) as connection:
         connection.execute("BEGIN IMMEDIATE")
+        revision_row = connection.execute(
+            "SELECT value FROM settings WHERE key = 'revision'"
+        ).fetchone()
+        current_revision = int(revision_row["value"]) if revision_row else 0
+        if expected_revision is not None and expected_revision != current_revision:
+            raise StateConflictError(current_revision)
+
         connection.execute("DELETE FROM applications")
         connection.execute("DELETE FROM lists")
         for item in state["lists"]:
@@ -250,7 +274,16 @@ def write_state(db_path, payload):
             """,
             (state["activeListId"],),
         )
+        next_revision = current_revision + 1
+        connection.execute(
+            """
+            INSERT INTO settings(key, value) VALUES ('revision', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (str(next_revision),),
+        )
         connection.commit()
+        return next_revision
 
 
 class OfferFlowHandler(SimpleHTTPRequestHandler):
@@ -260,6 +293,44 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
     @property
     def db_path(self):
         return self.server.db_path
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        )
+        super().end_headers()
+
+    def is_authorized(self):
+        if self.server.auth_password is None:
+            return True
+        scheme, _, encoded = self.headers.get("Authorization", "").partition(" ")
+        if scheme.lower() != "basic" or not encoded:
+            return False
+        try:
+            decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return False
+        username, separator, password = decoded.partition(":")
+        return bool(separator) and hmac.compare_digest(
+            username.encode("utf-8"), self.server.auth_username.encode("utf-8")
+        ) and hmac.compare_digest(
+            password.encode("utf-8"), self.server.auth_password.encode("utf-8")
+        )
+
+    def require_authorization(self):
+        if self.is_authorized():
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="OfferFlow", charset="UTF-8"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
 
     def send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -273,32 +344,69 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/health":
-            self.send_json({"ok": True, "database": "sqlite"})
+            try:
+                with connect(self.db_path) as connection:
+                    connection.execute("SELECT 1").fetchone()
+                self.send_json({"ok": True, "database": "sqlite"})
+            except sqlite3.Error:
+                self.send_json({"ok": False, "error": "database unavailable"}, status=503)
+            return
+        if not self.require_authorization():
             return
         if path == "/api/state":
             self.send_json(read_state(self.db_path))
             return
-        if path == "/data" or path.startswith("/data/"):
+        if path not in STATIC_PATHS:
             self.send_error(404)
             return
         super().do_GET()
+
+    def do_HEAD(self):
+        path = urlparse(self.path).path
+        if not self.require_authorization():
+            return
+        if path not in STATIC_PATHS:
+            self.send_error(404)
+            return
+        super().do_HEAD()
 
     def do_PUT(self):
         path = urlparse(self.path).path
         if path != "/api/state":
             self.send_error(404)
             return
+        if not self.require_authorization():
+            return
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
             if content_length <= 0 or content_length > MAX_BODY_BYTES:
                 raise ValueError("request body size is invalid")
             payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
-            write_state(self.db_path, payload)
+            expected_revision_header = self.headers.get("If-Match")
+            if expected_revision_header is None:
+                raise ValueError("If-Match header is required")
+            try:
+                expected_revision = int(expected_revision_header.strip().strip('"'))
+            except ValueError as error:
+                raise ValueError("If-Match must contain a revision number") from error
+            revision = write_state(self.db_path, payload, expected_revision)
             self.send_json(
                 {
                     "ok": True,
+                    "revision": revision,
                     "savedAt": datetime.now(timezone.utc).isoformat(),
                 }
+            )
+        except StateConflictError as error:
+            latest = read_state(self.db_path)
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": str(error),
+                    "revision": error.current_revision,
+                    "latest": latest,
+                },
+                status=409,
             )
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
             self.send_json({"ok": False, "error": str(error)}, status=400)
@@ -312,23 +420,50 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
 class OfferFlowServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
-    def __init__(self, server_address, handler_class, db_path):
+    def __init__(
+        self, server_address, handler_class, db_path, auth_username="offerflow", auth_password=None
+    ):
         self.db_path = db_path
+        self.auth_username = auth_username
+        self.auth_password = auth_password
         super().__init__(server_address, handler_class)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run the OfferFlow local app")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=4173)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
+    parser = argparse.ArgumentParser(description="Run the OfferFlow app")
+    parser.add_argument(
+        "--host", default=os.environ.get("OFFERFLOW_HOST", "127.0.0.1")
+    )
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("PORT", "4173"))
+    )
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=Path(os.environ.get("OFFERFLOW_DB", str(DEFAULT_DB_PATH))),
+    )
     args = parser.parse_args()
+
+    auth_username = os.environ.get("OFFERFLOW_USERNAME", "offerflow")
+    auth_password = os.environ.get("OFFERFLOW_PASSWORD")
+    if args.host not in {"127.0.0.1", "localhost", "::1"} and not auth_password:
+        parser.error("OFFERFLOW_PASSWORD is required when listening beyond localhost")
 
     db_path = args.db.expanduser().resolve()
     initialize_database(db_path)
-    server = OfferFlowServer((args.host, args.port), OfferFlowHandler, db_path)
+    server = OfferFlowServer(
+        (args.host, args.port),
+        OfferFlowHandler,
+        db_path,
+        auth_username=auth_username,
+        auth_password=auth_password,
+    )
     print("OfferFlow running at http://%s:%s" % (args.host, args.port), flush=True)
     print("SQLite database: %s" % db_path, flush=True)
+    print(
+        "Authentication: %s" % ("required" if auth_password else "disabled (localhost only)"),
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

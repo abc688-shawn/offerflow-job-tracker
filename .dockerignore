@@ -1,0 +1,8 @@
+.git
+.gitignore
+.DS_Store
+README.md
+data
+tests
+__pycache__
+*.py[cod]

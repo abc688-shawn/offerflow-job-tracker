@@ -19,6 +19,7 @@ const seedState = {
 
 let state = loadLocalState();
 let backendReady = false;
+let backendRevision = 0;
 let pendingBackendSnapshot = null;
 let backendSyncRunning = false;
 const ui = {
@@ -89,14 +90,29 @@ function setSyncStatus(status, label) {
 async function persistBackend(snapshot) {
   const response = await fetch("/api/state", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "If-Match": String(backendRevision)
+    },
     body: JSON.stringify(snapshot),
     keepalive: true
   });
+  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || `Save failed with status ${response.status}`);
+    const error = new Error(payload.error || `Save failed with status ${response.status}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
+  backendRevision = payload.revision;
+}
+
+function applyBackendState(payload) {
+  if (!payload.initialized || !payload.state?.lists?.length) return false;
+  backendRevision = payload.revision;
+  state = payload.state;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  return true;
 }
 
 async function flushBackendQueue() {
@@ -112,7 +128,14 @@ async function flushBackendQueue() {
   } catch (error) {
     console.warn("Could not save to SQLite backend", error);
     pendingBackendSnapshot = null;
-    setSyncStatus("local", "仅本地保存");
+    if (error.status === 409 && applyBackendState(error.payload.latest)) {
+      setSyncStatus("saved", "已同步新版本");
+      render();
+      showToast("另一台设备已更新数据，已载入最新版本");
+    } else {
+      backendReady = false;
+      setSyncStatus("local", "仅本地保存");
+    }
   } finally {
     backendSyncRunning = false;
     if (pendingBackendSnapshot) void flushBackendQueue();
@@ -138,17 +161,36 @@ async function connectBackend() {
     if (!response.ok) throw new Error(`Backend returned status ${response.status}`);
     const payload = await response.json();
     backendReady = true;
-    if (payload.initialized && payload.state?.lists?.length) {
-      state = payload.state;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } else {
-      await persistBackend(state);
+    backendRevision = payload.revision;
+    if (!applyBackendState(payload)) {
+      try {
+        await persistBackend(state);
+      } catch (error) {
+        if (error.status !== 409 || !applyBackendState(error.payload.latest)) throw error;
+        showToast("云端已由另一台设备初始化，已载入云端数据");
+      }
     }
     setSyncStatus("saved", "已保存");
   } catch (error) {
     backendReady = false;
     console.warn("SQLite backend is unavailable; using browser storage", error);
     setSyncStatus("local", "仅本地保存");
+  }
+}
+
+async function refreshBackendState() {
+  if (!backendReady || backendSyncRunning || pendingBackendSnapshot) return;
+  try {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Backend returned status ${response.status}`);
+    const payload = await response.json();
+    if (payload.revision > backendRevision && applyBackendState(payload)) {
+      render();
+      setSyncStatus("saved", "已同步新版本");
+      showToast("已同步另一台设备的修改");
+    }
+  } catch (error) {
+    console.warn("Could not refresh state from SQLite backend", error);
   }
 }
 
@@ -619,3 +661,7 @@ if (!["", "#top", "#main", "#calendar"].includes(window.location.hash)) {
 }
 
 connectBackend().finally(render);
+window.setInterval(() => void refreshBackendState(), 30000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void refreshBackendState();
+});
