@@ -1,0 +1,14 @@
+# local path|server path
+index.html|app/index.html
+styles.css|app/styles.css
+auth-react.js|app/auth-react.js
+app.js|app/app.js
+server.py|app/server.py
+manage_users.py|app/manage_users.py
+deploy/backup_offerflow.py|app/backup_offerflow.py
+deploy/nginx-offerflow.conf|system/nginx-offerflow.conf
+deploy/offerflow.service|system/offerflow.service
+deploy/offerflow-backup.service|system/offerflow-backup.service
+deploy/offerflow-backup.timer|system/offerflow-backup.timer
+deploy/renewal-hooks/reload-nginx.sh|system/renewal-hooks/reload-nginx.sh
+deploy/offerflow-users-sync|bin/offerflow-users-sync

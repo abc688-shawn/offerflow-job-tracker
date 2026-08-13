@@ -3,7 +3,10 @@
   "private": true,
   "scripts": {
     "build": "npm run build:auth",
-    "build:auth": "esbuild src/auth.jsx --bundle --minify --outfile=auth-react.js --jsx=automatic --target=es2020"
+    "build:auth": "esbuild src/auth.jsx --bundle --minify --outfile=auth-react.js --jsx=automatic --target=es2020",
+    "dev:lan": "bash scripts/dev-lan.sh",
+    "check:server": "bash scripts/check-server-sync.sh",
+    "deploy:server": "bash scripts/deploy-server.sh"
   },
   "dependencies": {
     "lucide-react": "1.31.0",
