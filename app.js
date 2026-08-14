@@ -228,18 +228,27 @@ function uniqueId(prefix) {
 }
 
 function statusGroup(status) {
-  if (["一面", "二面", "三面", "终面"].includes(status)) return "interview";
+  if (["HR 沟通", "一面", "二面", "三面", "终面"].includes(status)) return "interview";
   if (status === "Offer") return "offer";
   if (["已拒绝", "已结束"].includes(status)) return "closed";
   return "progress";
 }
 
 function statusClass(status) {
-  const group = statusGroup(status);
-  if (group === "interview") return "status-interview";
-  if (group === "offer") return "status-offer";
-  if (group === "closed") return "status-closed";
-  return "status-active";
+  const classes = {
+    "待投递": "status-pending",
+    "已投递": "status-applied",
+    "笔试": "status-assessment",
+    "HR 沟通": "status-hr",
+    "一面": "status-interview-one",
+    "二面": "status-interview-two",
+    "三面": "status-interview-three",
+    "终面": "status-final",
+    "Offer": "status-offer",
+    "已拒绝": "status-rejected",
+    "已结束": "status-ended"
+  };
+  return classes[status] || "status-pending";
 }
 
 function filteredApplications() {

@@ -742,11 +742,96 @@ h1 {
 .cell-input:focus, .cell-select:focus { border-color: var(--indigo); background: #fff; outline: 0; }
 .company-input { font-weight: 600; }
 .date-input { padding-right: 2px; font-variant-numeric: tabular-nums; }
-.status-select { padding: 0 26px 0 10px; font-size: 12px; font-weight: 600; }
-.status-active { border-color: #ebe8d7; background: var(--amber-soft); color: var(--amber); }
-.status-interview { border-color: #e7d2cf; background: var(--coral-soft); color: var(--coral); }
-.status-offer { border-color: #cfe4dd; background: var(--mint-soft); color: var(--mint); }
-.status-closed { border-color: #e1e2e7; background: #f1f2f5; color: #737683; }
+.status-select {
+  --status-bg: #eef1f4;
+  --status-border: #d8dee5;
+  --status-accent: #7b8796;
+  --status-text: #56606f;
+  padding: 0 26px 0 11px;
+  border-color: var(--status-border);
+  background: var(--status-bg);
+  box-shadow: inset 3px 0 0 var(--status-accent);
+  color: var(--status-text);
+  font-size: 12px;
+  font-weight: 650;
+  transition: border-color 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+}
+.status-select:hover {
+  border-color: var(--status-accent);
+  background: var(--status-bg);
+  filter: saturate(1.08);
+}
+.status-select:focus {
+  border-color: var(--status-accent);
+  background: var(--status-bg);
+  box-shadow: inset 3px 0 0 var(--status-accent), 0 0 0 2px rgba(87, 81, 214, 0.16);
+}
+.status-pending {
+  --status-bg: #eef1f4;
+  --status-border: #d8dee5;
+  --status-accent: #7b8796;
+  --status-text: #56606f;
+}
+.status-applied {
+  --status-bg: #e7f1fa;
+  --status-border: #c8ddf0;
+  --status-accent: #3c79b3;
+  --status-text: #245d92;
+}
+.status-assessment {
+  --status-bg: #fff3c9;
+  --status-border: #ead58b;
+  --status-accent: #c28b12;
+  --status-text: #765606;
+}
+.status-hr {
+  --status-bg: #e4f5f1;
+  --status-border: #bddfd8;
+  --status-accent: #278a80;
+  --status-text: #176a64;
+}
+.status-interview-one {
+  --status-bg: #e5f0f8;
+  --status-border: #c4dceb;
+  --status-accent: #3280ad;
+  --status-text: #1c6091;
+}
+.status-interview-two {
+  --status-bg: #ececf9;
+  --status-border: #d2d2ec;
+  --status-accent: #696cbb;
+  --status-text: #484da0;
+}
+.status-interview-three {
+  --status-bg: #f1eaf7;
+  --status-border: #ddcce9;
+  --status-accent: #8a5aaa;
+  --status-text: #6e428f;
+}
+.status-final {
+  --status-bg: #f8e8f0;
+  --status-border: #e9c8d8;
+  --status-accent: #b4577e;
+  --status-text: #8d3e61;
+}
+.status-offer {
+  --status-bg: #e4f4ec;
+  --status-border: #bfdfd0;
+  --status-accent: #2f8a65;
+  --status-text: #1e6b4f;
+}
+.status-rejected {
+  --status-bg: #fae9e8;
+  --status-border: #edc9c5;
+  --status-accent: #c15d55;
+  --status-text: #983d38;
+}
+.status-ended {
+  --status-bg: #eeeef1;
+  --status-border: #d9d9df;
+  --status-accent: #8b8d98;
+  --status-text: #666874;
+}
 .notes-input { color: #656976; }
 
 .schedule-button {
