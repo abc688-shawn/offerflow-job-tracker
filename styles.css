@@ -325,7 +325,7 @@ body {
 .logout-button { white-space: nowrap; }
 .account-button { white-space: nowrap; }
 
-button, input, select { font: inherit; letter-spacing: 0; }
+button, input, select, textarea { font: inherit; letter-spacing: 0; }
 button, select { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
   outline: 3px solid rgba(87, 81, 214, 0.22);
@@ -740,6 +740,20 @@ h1 {
 }
 .cell-input:hover, .cell-select:hover { border-color: var(--line); background: #fff; }
 .cell-input:focus, .cell-select:focus { border-color: var(--indigo); background: #fff; outline: 0; }
+.cell-textarea {
+  display: block;
+  padding-block: 6px;
+  overflow: hidden;
+  resize: none;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.cell-textarea.expanded {
+  min-height: 54px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 5px 16px rgba(43, 39, 112, 0.12);
+}
 .company-input { font-weight: 600; }
 .date-input { padding-right: 2px; font-variant-numeric: tabular-nums; }
 .status-select {

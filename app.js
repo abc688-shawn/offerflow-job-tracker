@@ -713,6 +713,15 @@ function updateApplication(id, field, value) {
   else renderSummary();
 }
 
+function resizeExpandedCell(textarea) {
+  const maxHeight = 154;
+  textarea.style.height = "34px";
+  const contentHeight = textarea.scrollHeight + 2;
+  const expandedHeight = Math.min(Math.max(contentHeight, 54), maxHeight);
+  textarea.style.height = `${expandedHeight}px`;
+  textarea.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
+}
+
 function addApplication() {
   const today = toDateString(new Date());
   const application = {
@@ -1263,8 +1272,25 @@ els.typeFilter.addEventListener("change", (event) => {
 els.tableBody.addEventListener("input", (event) => {
   const target = event.target.closest("[data-field]");
   const row = event.target.closest("tr[data-id]");
-  if (!target || !row || !target.matches("input:not([type='date'])")) return;
+  if (!target || !row || !target.matches("input:not([type='date']), textarea")) return;
+  if (target.matches(".cell-textarea.expanded")) resizeExpandedCell(target);
   updateApplication(row.dataset.id, target.dataset.field, target.value);
+});
+
+els.tableBody.addEventListener("focusin", (event) => {
+  const textarea = event.target.closest(".cell-textarea");
+  if (!textarea) return;
+  textarea.classList.add("expanded");
+  resizeExpandedCell(textarea);
+});
+
+els.tableBody.addEventListener("focusout", (event) => {
+  const textarea = event.target.closest(".cell-textarea");
+  if (!textarea) return;
+  textarea.classList.remove("expanded");
+  textarea.style.height = "";
+  textarea.style.overflowY = "";
+  textarea.scrollLeft = 0;
 });
 
 els.tableBody.addEventListener("change", (event) => {

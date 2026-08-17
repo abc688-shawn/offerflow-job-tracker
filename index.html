@@ -321,20 +321,20 @@
     <template id="row-template">
       <tr>
         <td class="row-index" data-label="#"></td>
-        <td data-label="公司名称"><input class="cell-input company-input" data-field="company" aria-label="公司名称" /></td>
+        <td data-label="公司名称"><textarea class="cell-input cell-textarea company-input" data-field="company" aria-label="公司名称" rows="1"></textarea></td>
         <td data-label="性质">
           <select class="cell-select" data-field="type" aria-label="公司性质">
             <option>国央企</option><option>私企</option><option>外企</option><option>事业单位</option><option>其他</option>
           </select>
         </td>
-        <td data-label="岗位名称"><input class="cell-input" data-field="role" aria-label="岗位名称" /></td>
+        <td data-label="岗位名称"><textarea class="cell-input cell-textarea" data-field="role" aria-label="岗位名称" rows="1"></textarea></td>
         <td data-label="投递日期"><input class="cell-input date-input" data-field="date" type="date" aria-label="投递日期" /></td>
         <td data-label="投递状态">
           <select class="cell-select status-select" data-field="status" aria-label="投递状态">
             <option>待投递</option><option>已投递</option><option>笔试</option><option>HR 沟通</option><option>一面</option><option>二面</option><option>三面</option><option>终面</option><option>Offer</option><option>已拒绝</option><option>已结束</option>
           </select>
         </td>
-        <td data-label="备注 / 官网"><input class="cell-input notes-input" data-field="notes" aria-label="备注或官网" placeholder="补充备注或链接" /></td>
+        <td data-label="备注 / 官网"><textarea class="cell-input cell-textarea notes-input" data-field="notes" aria-label="备注或官网" placeholder="补充备注或链接" rows="1"></textarea></td>
         <td class="interview-cell" data-label="面试">
           <button class="schedule-button" type="button"></button>
         </td>
