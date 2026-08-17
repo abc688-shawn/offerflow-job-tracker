@@ -98,6 +98,27 @@ class StateDatabaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "application ids"):
             server.write_state(self.db_path, self.user["id"], state)
 
+    def test_personal_document_round_trip_and_revision_conflict(self):
+        self.assertEqual(
+            server.read_document(self.db_path, self.user["id"]),
+            {"initialized": False, "revision": 0, "content": ""},
+        )
+        content = '<h2>投递规则</h2><p>同一家公司可投 2 个岗位</p><img src="data:image/png;base64,AA==">'
+        self.assertEqual(
+            server.write_document(self.db_path, self.user["id"], {"content": content}, 0),
+            1,
+        )
+        self.assertEqual(server.read_document(self.db_path, self.user["id"])["content"], content)
+        with self.assertRaisesRegex(server.StateConflictError, "another device"):
+            server.write_document(self.db_path, self.user["id"], {"content": "stale"}, 0)
+
+    def test_personal_documents_are_isolated_by_user(self):
+        second_user = server.register_user(self.db_path, "second-user", "second-password")
+        server.write_document(self.db_path, self.user["id"], {"content": "用户一"}, 0)
+        server.write_document(self.db_path, second_user["id"], {"content": "用户二"}, 0)
+        self.assertEqual(server.read_document(self.db_path, self.user["id"])["content"], "用户一")
+        self.assertEqual(server.read_document(self.db_path, second_user["id"])["content"], "用户二")
+
     def test_password_is_hashed_and_authentication_is_case_insensitive(self):
         row = server.get_user_by_username(self.db_path, "FIRST-USER")
         self.assertNotEqual(row["password_hash"], "first-password")
@@ -420,6 +441,13 @@ class HttpServerTests(unittest.TestCase):
             403,
         )
         self.assertEqual(
+            self.request(
+                "PUT", "/api/document", {"content": "private"},
+                {"Cookie": cookie, "If-Match": "0"},
+            )[0],
+            403,
+        )
+        self.assertEqual(
             self.request("POST", "/api/auth/logout", headers={"Cookie": cookie})[0],
             403,
         )
@@ -495,6 +523,22 @@ class HttpServerTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(payload["revision"], 1)
         self.assertEqual(payload["latest"]["state"], state)
+
+    def test_personal_document_api_is_private_and_versioned(self):
+        self.assertEqual(self.request("GET", "/api/document")[0], 401)
+        cookie = self.login()
+        headers = {"Cookie": cookie, "If-Match": "0", "X-OfferFlow-CSRF": "1"}
+        content = "<h2>公司投递限制</h2><p>示例公司：2 个岗位</p>"
+        status, _, body = self.request("PUT", "/api/document", {"content": content}, headers)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["revision"], 1)
+        saved = json.loads(self.request("GET", "/api/document", headers={"Cookie": cookie})[2])
+        self.assertEqual(saved["content"], content)
+        self.assertEqual(saved["revision"], 1)
+
+        status, _, body = self.request("PUT", "/api/document", {"content": "stale"}, headers)
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["latest"]["content"], content)
 
     def test_https_proxy_sets_secure_session_cookie(self):
         status, headers, _ = self.request(

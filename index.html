@@ -21,6 +21,7 @@
         <nav class="primary-nav" aria-label="主导航">
           <a class="active" href="#main">求职管理</a>
           <a href="#calendar">面试日历</a>
+          <a href="#document">个人文档</a>
         </nav>
 
         <div class="header-actions">
@@ -139,6 +140,64 @@
           <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
         </div>
         <div id="calendar-grid" class="calendar-grid"></div>
+      </section>
+
+      <section id="document" class="document-panel" aria-labelledby="document-title">
+        <div class="document-heading">
+          <div>
+            <p class="panel-kicker">PERSONAL NOTES</p>
+            <h2 id="document-title">个人文档</h2>
+          </div>
+          <span id="document-sync-status" class="sync-status document-sync-status" data-state="connecting" role="status" aria-live="polite">
+            <i aria-hidden="true"></i><span>连接中</span>
+          </span>
+        </div>
+
+        <div class="document-toolbar" role="toolbar" aria-label="文档编辑工具">
+          <div class="document-tool-group">
+            <button class="document-tool-button" type="button" data-document-command="undo" aria-label="撤销" title="撤销">↶</button>
+            <button class="document-tool-button" type="button" data-document-command="redo" aria-label="重做" title="重做">↷</button>
+          </div>
+          <span class="document-tool-divider" aria-hidden="true"></span>
+          <label class="document-format-select">
+            <span class="sr-only">段落样式</span>
+            <select id="document-block-format" aria-label="段落样式" title="段落样式">
+              <option value="p">正文</option>
+              <option value="h2">一级标题</option>
+              <option value="h3">二级标题</option>
+              <option value="blockquote">引用</option>
+            </select>
+          </label>
+          <div class="document-tool-group">
+            <button class="document-tool-button" type="button" data-document-command="bold" aria-label="粗体" title="粗体"><strong>B</strong></button>
+            <button class="document-tool-button" type="button" data-document-command="italic" aria-label="斜体" title="斜体"><em>I</em></button>
+            <button class="document-tool-button document-list-tool" type="button" data-document-command="insertUnorderedList" aria-label="无序列表" title="无序列表"><span aria-hidden="true">•</span><i aria-hidden="true"></i></button>
+            <button class="document-tool-button document-list-tool ordered" type="button" data-document-command="insertOrderedList" aria-label="有序列表" title="有序列表"><span aria-hidden="true">1.</span><i aria-hidden="true"></i></button>
+          </div>
+          <span class="document-tool-divider" aria-hidden="true"></span>
+          <div class="document-tool-group">
+            <button id="document-link-button" class="document-tool-button" type="button" aria-label="插入链接" title="插入链接">⌁</button>
+            <button id="document-image-button" class="document-tool-button" type="button" aria-label="插入图片" title="插入图片">▧</button>
+          </div>
+          <input id="document-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+        </div>
+
+        <div class="document-paper">
+          <div
+            id="document-editor"
+            class="document-editor"
+            contenteditable="true"
+            role="textbox"
+            aria-multiline="true"
+            aria-label="个人文档内容"
+            data-placeholder="记录公司投递限制、网申入口、时间节点……"
+            spellcheck="true"
+          ></div>
+        </div>
+        <div class="document-footer">
+          <span id="document-count">0 字</span>
+          <span>自动保存</span>
+        </div>
       </section>
 
       <footer class="page-encouragement">

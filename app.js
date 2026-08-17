@@ -19,6 +19,14 @@ let backendReady = false;
 let backendRevision = 0;
 let pendingBackendSnapshot = null;
 let backendSyncRunning = false;
+let documentStorageKey = null;
+let personalDocumentContent = "";
+let documentBackendReady = false;
+let documentRevision = 0;
+let pendingDocumentContent = null;
+let documentSyncRunning = false;
+let documentSaveTimer = null;
+let lastDocumentRange = null;
 const ui = {
   activeFilter: "all",
   search: "",
@@ -70,6 +78,14 @@ const els = {
   activeApplications: document.querySelector("#active-applications"),
   offerCount: document.querySelector("#offer-count"),
   syncStatus: document.querySelector("#sync-status"),
+  documentSyncStatus: document.querySelector("#document-sync-status"),
+  documentEditor: document.querySelector("#document-editor"),
+  documentCount: document.querySelector("#document-count"),
+  documentBlockFormat: document.querySelector("#document-block-format"),
+  documentToolbar: document.querySelector(".document-toolbar"),
+  documentLinkButton: document.querySelector("#document-link-button"),
+  documentImageButton: document.querySelector("#document-image-button"),
+  documentImageInput: document.querySelector("#document-image-input"),
   toast: document.querySelector("#toast")
 };
 
@@ -212,6 +228,219 @@ async function refreshBackendState() {
     }
   } catch (error) {
     console.warn("Could not refresh state from SQLite backend", error);
+  }
+}
+
+const DOCUMENT_ALLOWED_TAGS = new Set([
+  "P", "BR", "DIV", "H2", "H3", "STRONG", "B", "EM", "I", "U",
+  "UL", "OL", "LI", "BLOCKQUOTE", "A", "IMG"
+]);
+const DOCUMENT_BLOCKED_TAGS = new Set([
+  "SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH", "FORM", "INPUT", "BUTTON"
+]);
+const MAX_PERSONAL_DOCUMENT_BYTES = 6.5 * 1024 * 1024;
+
+function sanitizeDocumentHtml(source) {
+  const template = document.createElement("template");
+  template.innerHTML = String(source || "");
+  Array.from(template.content.querySelectorAll("*")).forEach((element) => {
+    if (DOCUMENT_BLOCKED_TAGS.has(element.tagName)) {
+      element.remove();
+      return;
+    }
+    if (!DOCUMENT_ALLOWED_TAGS.has(element.tagName)) {
+      element.replaceWith(...element.childNodes);
+      return;
+    }
+
+    const href = element.tagName === "A" ? element.getAttribute("href") : null;
+    const imageSource = element.tagName === "IMG" ? element.getAttribute("src") : null;
+    const imageAlt = element.tagName === "IMG" ? element.getAttribute("alt") : null;
+    Array.from(element.attributes).forEach((attribute) => element.removeAttribute(attribute.name));
+
+    if (element.tagName === "A" && href) {
+      try {
+        const url = new URL(href, window.location.origin);
+        if (["http:", "https:"].includes(url.protocol)) {
+          element.setAttribute("href", url.href);
+          element.setAttribute("target", "_blank");
+          element.setAttribute("rel", "noopener noreferrer");
+        }
+      } catch (error) {
+        // Invalid links remain as plain formatted text.
+      }
+    }
+    if (element.tagName === "IMG") {
+      if (!/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(imageSource || "")) {
+        element.remove();
+        return;
+      }
+      element.setAttribute("src", imageSource);
+      element.setAttribute("alt", String(imageAlt || "文档图片").slice(0, 160));
+    }
+  });
+
+  const content = template.innerHTML;
+  const hasImage = Boolean(template.content.querySelector("img"));
+  const hasText = Boolean(template.content.textContent.replace(/\s/g, ""));
+  return hasImage || hasText ? content : "";
+}
+
+function setDocumentSyncStatus(status, label) {
+  els.documentSyncStatus.dataset.state = status;
+  els.documentSyncStatus.querySelector("span").textContent = label;
+}
+
+function updateDocumentCount(content = personalDocumentContent) {
+  const template = document.createElement("template");
+  template.innerHTML = content;
+  const characters = template.content.textContent.replace(/\s/g, "").length;
+  const images = template.content.querySelectorAll("img").length;
+  els.documentCount.textContent = `${characters} 字${images ? ` · ${images} 张图片` : ""}`;
+}
+
+function loadLocalDocument() {
+  if (!documentStorageKey) return "";
+  try {
+    const saved = JSON.parse(localStorage.getItem(documentStorageKey));
+    return sanitizeDocumentHtml(saved?.content || "");
+  } catch (error) {
+    console.warn("Could not load the local personal document", error);
+    return "";
+  }
+}
+
+function storeDocumentLocally(content) {
+  if (!documentStorageKey) return;
+  try {
+    localStorage.setItem(documentStorageKey, JSON.stringify({ content }));
+  } catch (error) {
+    console.warn("Could not cache the personal document locally", error);
+  }
+}
+
+function applyPersonalDocument(payload) {
+  documentRevision = payload.revision;
+  personalDocumentContent = sanitizeDocumentHtml(payload.content || "");
+  storeDocumentLocally(personalDocumentContent);
+  els.documentEditor.innerHTML = personalDocumentContent;
+  updateDocumentCount();
+}
+
+async function persistPersonalDocument(content) {
+  const response = await fetch("/api/document", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "If-Match": String(documentRevision),
+      "X-OfferFlow-CSRF": "1"
+    },
+    body: JSON.stringify({ content })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || `Document save failed with status ${response.status}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  documentRevision = payload.revision;
+}
+
+async function flushDocumentQueue() {
+  window.clearTimeout(documentSaveTimer);
+  documentSaveTimer = null;
+  if (!documentBackendReady || documentSyncRunning || pendingDocumentContent === null) return;
+  documentSyncRunning = true;
+  try {
+    while (pendingDocumentContent !== null) {
+      const snapshot = pendingDocumentContent;
+      pendingDocumentContent = null;
+      await persistPersonalDocument(snapshot);
+    }
+    setDocumentSyncStatus("saved", "已保存");
+  } catch (error) {
+    console.warn("Could not save the personal document", error);
+    pendingDocumentContent = null;
+    if (error.status === 401) {
+      showAuthScreen("登录已失效，请重新登录");
+    } else if (error.status === 409 && error.payload?.latest) {
+      applyPersonalDocument(error.payload.latest);
+      setDocumentSyncStatus("saved", "已同步新版本");
+      showToast("另一台设备已更新个人文档，已载入最新版本");
+    } else {
+      documentBackendReady = false;
+      setDocumentSyncStatus("local", "仅本地保存");
+    }
+  } finally {
+    documentSyncRunning = false;
+    if (pendingDocumentContent !== null) void flushDocumentQueue();
+  }
+}
+
+function captureDocumentDraft() {
+  const content = sanitizeDocumentHtml(els.documentEditor.innerHTML);
+  if (!content && els.documentEditor.innerHTML) els.documentEditor.replaceChildren();
+  updateDocumentCount(content);
+  if (new Blob([content]).size > MAX_PERSONAL_DOCUMENT_BYTES) {
+    setDocumentSyncStatus("error", "内容过大");
+    showToast("个人文档已超过容量限制，请删除部分图片");
+    return;
+  }
+  personalDocumentContent = content;
+  storeDocumentLocally(content);
+  pendingDocumentContent = content;
+  if (!documentBackendReady) {
+    setDocumentSyncStatus("local", "仅本地保存");
+    return;
+  }
+  setDocumentSyncStatus("saving", "保存中");
+  window.clearTimeout(documentSaveTimer);
+  documentSaveTimer = window.setTimeout(() => void flushDocumentQueue(), 700);
+}
+
+async function connectPersonalDocument() {
+  setDocumentSyncStatus("connecting", "连接中");
+  try {
+    const response = await fetch("/api/document", { cache: "no-store" });
+    if (response.status === 401) {
+      showAuthScreen("登录已失效，请重新登录");
+      return;
+    }
+    if (!response.ok) throw new Error(`Backend returned status ${response.status}`);
+    const payload = await response.json();
+    documentBackendReady = true;
+    documentRevision = payload.revision;
+    if (payload.initialized) {
+      applyPersonalDocument(payload);
+    } else {
+      await persistPersonalDocument(personalDocumentContent);
+    }
+    setDocumentSyncStatus("saved", "已保存");
+  } catch (error) {
+    documentBackendReady = false;
+    console.warn("Personal document backend is unavailable", error);
+    setDocumentSyncStatus("local", "仅本地保存");
+  }
+}
+
+async function refreshPersonalDocument() {
+  if (!currentUser || !documentBackendReady || documentSyncRunning || pendingDocumentContent !== null) return;
+  try {
+    const response = await fetch("/api/document", { cache: "no-store" });
+    if (response.status === 401) {
+      showAuthScreen("登录已失效，请重新登录");
+      return;
+    }
+    if (!response.ok) throw new Error(`Backend returned status ${response.status}`);
+    const payload = await response.json();
+    if (payload.revision > documentRevision) {
+      applyPersonalDocument(payload);
+      setDocumentSyncStatus("saved", "已同步新版本");
+      showToast("已同步另一台设备的个人文档修改");
+    }
+  } catch (error) {
+    console.warn("Could not refresh the personal document", error);
   }
 }
 
@@ -591,12 +820,151 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
+function rememberDocumentRange() {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  if (els.documentEditor.contains(range.commonAncestorContainer)) {
+    lastDocumentRange = range.cloneRange();
+  }
+}
+
+function currentDocumentRange() {
+  const selection = window.getSelection();
+  if (selection?.rangeCount) {
+    const range = selection.getRangeAt(0);
+    if (els.documentEditor.contains(range.commonAncestorContainer)) return range.cloneRange();
+  }
+  if (lastDocumentRange && els.documentEditor.contains(lastDocumentRange.commonAncestorContainer)) {
+    return lastDocumentRange.cloneRange();
+  }
+  const range = document.createRange();
+  range.selectNodeContents(els.documentEditor);
+  range.collapse(false);
+  return range;
+}
+
+function restoreDocumentRange(range = currentDocumentRange()) {
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  els.documentEditor.focus();
+  return range;
+}
+
+function insertDocumentNode(node, range = currentDocumentRange()) {
+  range.deleteContents();
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.collapse(true);
+  restoreDocumentRange(range);
+  lastDocumentRange = range.cloneRange();
+  return range;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("无法读取图片"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function compressDocumentImage(file) {
+  if (!file.type.startsWith("image/")) throw new Error("请选择图片文件");
+  if (file.size > 15 * 1024 * 1024) throw new Error("单张图片不能超过 15 MB");
+  const source = await readFileAsDataUrl(file);
+  const image = new Image();
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = () => reject(new Error("图片格式无法识别"));
+    image.src = source;
+  });
+
+  const render = (maxSide, quality) => {
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL("image/webp", quality);
+  };
+
+  let result = render(1600, 0.82);
+  if (result.length > 1.5 * 1024 * 1024) result = render(1100, 0.74);
+  return result;
+}
+
+async function insertDocumentImages(files, initialRange = currentDocumentRange()) {
+  const images = Array.from(files).filter((file) => file.type.startsWith("image/"));
+  if (!images.length) return;
+  let range = initialRange;
+  setDocumentSyncStatus("saving", "处理图片");
+  try {
+    const preparedImages = [];
+    for (const file of images) {
+      const dataUrl = await compressDocumentImage(file);
+      preparedImages.push({ dataUrl, name: file.name });
+      if (new Blob([personalDocumentContent, ...preparedImages.map((item) => item.dataUrl)]).size > MAX_PERSONAL_DOCUMENT_BYTES) {
+        throw new Error("个人文档容量不足，请先删除部分图片");
+      }
+    }
+    for (const item of preparedImages) {
+      const image = document.createElement("img");
+      image.src = item.dataUrl;
+      image.alt = item.name ? item.name.slice(0, 160) : "文档图片";
+      range = insertDocumentNode(image, range);
+      range = insertDocumentNode(document.createElement("br"), range);
+    }
+    captureDocumentDraft();
+    showToast(images.length > 1 ? `已插入 ${images.length} 张图片` : "已插入图片");
+  } catch (error) {
+    showToast(error.message);
+    setDocumentSyncStatus(documentBackendReady ? "saved" : "local", documentBackendReady ? "已保存" : "仅本地保存");
+  }
+}
+
+function normalizeDocumentUrl(value) {
+  const input = String(value || "").trim();
+  if (!input) return null;
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(input) ? input : `https://${input}`);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function updateDocumentToolbarState() {
+  if (!els.documentEditor.contains(document.activeElement) && document.activeElement !== els.documentEditor) return;
+  els.documentToolbar.querySelectorAll("[data-document-command]").forEach((button) => {
+    button.classList.toggle("active", document.queryCommandState(button.dataset.documentCommand));
+  });
+  const block = String(document.queryCommandValue("formatBlock") || "p").replace(/[<>]/g, "").toLowerCase();
+  if (["p", "h2", "h3", "blockquote"].includes(block)) els.documentBlockFormat.value = block;
+}
+
 function showAuthScreen(message = "") {
   currentUser = null;
   storageKey = null;
   backendReady = false;
   backendRevision = 0;
   pendingBackendSnapshot = null;
+  documentStorageKey = null;
+  personalDocumentContent = "";
+  documentBackendReady = false;
+  documentRevision = 0;
+  pendingDocumentContent = null;
+  documentSyncRunning = false;
+  lastDocumentRange = null;
+  window.clearTimeout(documentSaveTimer);
+  documentSaveTimer = null;
+  els.documentEditor.replaceChildren();
+  updateDocumentCount("");
   state = createEmptyState();
   els.appShell.hidden = true;
   window.OfferFlowAuth?.show({
@@ -612,24 +980,37 @@ function showAuthScreen(message = "") {
 async function activateSession(user) {
   currentUser = user;
   storageKey = `offerflow-data-v2:${user.id}`;
+  documentStorageKey = `offerflow-document-v1:${user.id}`;
   state = loadLocalState();
+  personalDocumentContent = loadLocalDocument();
   backendReady = false;
   backendRevision = 0;
   pendingBackendSnapshot = null;
+  documentBackendReady = false;
+  documentRevision = 0;
+  pendingDocumentContent = null;
+  documentSyncRunning = false;
+  els.documentEditor.innerHTML = personalDocumentContent;
+  updateDocumentCount();
   els.profileUsername.textContent = user.username;
   els.profileAvatar.textContent = Array.from(user.username)[0]?.toUpperCase() || "个";
   els.passwordButton.hidden = !authConfig.passwordChangeEnabled;
   window.OfferFlowAuth?.hide();
   els.appShell.hidden = false;
-  await connectBackend();
+  await Promise.all([connectBackend(), connectPersonalDocument()]);
   render();
 }
 
 async function logout() {
   els.logoutButton.disabled = true;
   try {
+    if (els.documentEditor.innerHTML !== personalDocumentContent) captureDocumentDraft();
     await flushBackendQueue();
+    await flushDocumentQueue();
     while (backendSyncRunning) {
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
+    while (documentSyncRunning) {
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     }
     await fetch("/api/auth/logout", {
@@ -758,6 +1139,86 @@ els.calendarGrid.addEventListener("click", (event) => {
   if (calendarEvent) openInterviewDialog(calendarEvent.dataset.applicationId);
 });
 
+els.documentEditor.addEventListener("input", captureDocumentDraft);
+els.documentEditor.addEventListener("keyup", updateDocumentToolbarState);
+els.documentEditor.addEventListener("mouseup", updateDocumentToolbarState);
+els.documentEditor.addEventListener("paste", (event) => {
+  const files = Array.from(event.clipboardData?.items || [])
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+  event.preventDefault();
+  const range = currentDocumentRange();
+  if (files.length) {
+    void insertDocumentImages(files, range);
+    return;
+  }
+  const text = event.clipboardData?.getData("text/plain") || "";
+  restoreDocumentRange(range);
+  document.execCommand("insertText", false, text);
+  captureDocumentDraft();
+});
+els.documentEditor.addEventListener("dragover", (event) => {
+  if (Array.from(event.dataTransfer?.items || []).some((item) => item.type.startsWith("image/"))) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+});
+els.documentEditor.addEventListener("drop", (event) => {
+  const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith("image/"));
+  if (!files.length) return;
+  event.preventDefault();
+  let range = null;
+  if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  void insertDocumentImages(files, range || currentDocumentRange());
+});
+
+els.documentToolbar.addEventListener("mousedown", (event) => {
+  if (event.target.closest("button")) event.preventDefault();
+});
+els.documentToolbar.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-document-command]");
+  if (!button) return;
+  restoreDocumentRange();
+  document.execCommand(button.dataset.documentCommand, false);
+  rememberDocumentRange();
+  updateDocumentToolbarState();
+  captureDocumentDraft();
+});
+els.documentBlockFormat.addEventListener("change", (event) => {
+  restoreDocumentRange();
+  document.execCommand("formatBlock", false, event.target.value);
+  rememberDocumentRange();
+  captureDocumentDraft();
+});
+els.documentLinkButton.addEventListener("click", () => {
+  const range = currentDocumentRange();
+  const selectedText = range.toString();
+  const url = normalizeDocumentUrl(window.prompt("输入链接地址", "https://"));
+  if (!url) return;
+  restoreDocumentRange(range);
+  if (selectedText) {
+    document.execCommand("createLink", false, url);
+  } else {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = url;
+    insertDocumentNode(link, range);
+  }
+  captureDocumentDraft();
+});
+els.documentImageButton.addEventListener("click", () => els.documentImageInput.click());
+els.documentImageInput.addEventListener("change", () => {
+  void insertDocumentImages(els.documentImageInput.files, currentDocumentRange());
+  els.documentImageInput.value = "";
+});
+document.addEventListener("selectionchange", () => {
+  rememberDocumentRange();
+  updateDocumentToolbarState();
+});
+
 document.querySelector("#add-row-button").addEventListener("click", addApplication);
 document.querySelector("#new-list-button").addEventListener("click", () => openListDialog("new"));
 document.querySelector("#rename-list-button").addEventListener("click", () => openListDialog("rename"));
@@ -810,12 +1271,18 @@ document.querySelector("#today-button").addEventListener("click", () => {
   });
 });
 
-if (!["", "#top", "#main", "#calendar"].includes(window.location.hash)) {
+if (!["", "#top", "#main", "#calendar", "#document"].includes(window.location.hash)) {
   window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#main`);
 }
 
 void bootstrap();
-window.setInterval(() => void refreshBackendState(), 30000);
+window.setInterval(() => {
+  void refreshBackendState();
+  void refreshPersonalDocument();
+}, 30000);
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") void refreshBackendState();
+  if (document.visibilityState === "visible") {
+    void refreshBackendState();
+    void refreshPersonalDocument();
+  }
 });

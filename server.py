@@ -23,6 +23,8 @@ from urllib.parse import urlparse
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = APP_DIR / "data" / "offerflow.db"
 MAX_BODY_BYTES = 2 * 1024 * 1024
+MAX_DOCUMENT_BODY_BYTES = 8 * 1024 * 1024
+MAX_DOCUMENT_CONTENT_LENGTH = 7 * 1024 * 1024
 STATIC_PATHS = {"/", "/index.html", "/styles.css", "/auth-react.js", "/app.js"}
 SESSION_COOKIE = "offerflow_session"
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -643,6 +645,61 @@ def write_state(db_path, user_id, payload, expected_revision=None):
     return next_revision
 
 
+def read_document(db_path, user_id):
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT key, value FROM user_settings
+            WHERE user_id = ? AND key IN ('personal_document', 'personal_document_revision')
+            """,
+            (user_id,),
+        ).fetchall()
+    values = {row["key"]: row["value"] for row in rows}
+    return {
+        "initialized": "personal_document" in values,
+        "revision": int(values.get("personal_document_revision", "0")),
+        "content": values.get("personal_document", ""),
+    }
+
+
+def write_document(db_path, user_id, payload, expected_revision=None):
+    if not isinstance(payload, dict):
+        raise ValueError("document must be an object")
+    content = require_string(
+        payload.get("content", ""), "document.content", MAX_DOCUMENT_CONTENT_LENGTH
+    )
+    with connect(db_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        revision_row = connection.execute(
+            """
+            SELECT value FROM user_settings
+            WHERE user_id = ? AND key = 'personal_document_revision'
+            """,
+            (user_id,),
+        ).fetchone()
+        current_revision = int(revision_row["value"]) if revision_row else 0
+        if expected_revision is not None and expected_revision != current_revision:
+            raise StateConflictError(current_revision)
+
+        connection.execute(
+            """
+            INSERT INTO user_settings(user_id, key, value) VALUES (?, 'personal_document', ?)
+            ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
+            """,
+            (user_id, content),
+        )
+        next_revision = current_revision + 1
+        connection.execute(
+            """
+            INSERT INTO user_settings(user_id, key, value)
+            VALUES (?, 'personal_document_revision', ?)
+            ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
+            """,
+            (user_id, str(next_revision)),
+        )
+    return next_revision
+
+
 class OfferFlowHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(APP_DIR), **kwargs)
@@ -658,7 +715,7 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+            "default-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
         )
         super().end_headers()
 
@@ -673,12 +730,12 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def read_json_body(self):
+    def read_json_body(self, max_body_bytes=MAX_BODY_BYTES):
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError as error:
             raise ValueError("request body size is invalid") from error
-        if content_length <= 0 or content_length > MAX_BODY_BYTES:
+        if content_length <= 0 or content_length > max_body_bytes:
             raise ValueError("request body size is invalid")
         return json.loads(self.rfile.read(content_length).decode("utf-8"))
 
@@ -755,6 +812,11 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
             user = self.require_user()
             if user:
                 self.send_json(read_state(self.db_path, user["id"]))
+            return
+        if path == "/api/document":
+            user = self.require_user()
+            if user:
+                self.send_json(read_document(self.db_path, user["id"]))
             return
         if path not in STATIC_PATHS:
             self.send_error(404)
@@ -860,7 +922,7 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         path = urlparse(self.path).path
-        if path != "/api/state":
+        if path not in {"/api/state", "/api/document"}:
             self.send_error(404)
             return
         if not self.csrf_allowed():
@@ -869,7 +931,9 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
         if not user:
             return
         try:
-            payload = self.read_json_body()
+            payload = self.read_json_body(
+                MAX_DOCUMENT_BODY_BYTES if path == "/api/document" else MAX_BODY_BYTES
+            )
             expected_revision_header = self.headers.get("If-Match")
             if expected_revision_header is None:
                 raise ValueError("If-Match header is required")
@@ -877,12 +941,19 @@ class OfferFlowHandler(SimpleHTTPRequestHandler):
                 expected_revision = int(expected_revision_header.strip().strip('"'))
             except ValueError as error:
                 raise ValueError("If-Match must contain a revision number") from error
-            revision = write_state(self.db_path, user["id"], payload, expected_revision)
+            if path == "/api/document":
+                revision = write_document(self.db_path, user["id"], payload, expected_revision)
+            else:
+                revision = write_state(self.db_path, user["id"], payload, expected_revision)
             self.send_json(
                 {"ok": True, "revision": revision, "savedAt": datetime.now(timezone.utc).isoformat()}
             )
         except StateConflictError as error:
-            latest = read_state(self.db_path, user["id"])
+            latest = (
+                read_document(self.db_path, user["id"])
+                if path == "/api/document"
+                else read_state(self.db_path, user["id"])
+            )
             self.send_json(
                 {"ok": False, "error": str(error), "revision": error.current_revision, "latest": latest},
                 status=409,
