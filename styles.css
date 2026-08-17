@@ -1125,35 +1125,11 @@ h1 {
   overflow: hidden;
   background: #fdfdfc;
 }
-.document-paper::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: max(94px, calc((100% - 820px) / 2 - 28px));
-  width: 1px;
-  background: #e7c9c5;
-  pointer-events: none;
-}
-.document-margin-mark {
-  position: absolute;
-  top: 58px;
-  left: max(26px, calc((100% - 980px) / 2));
-  display: grid;
-  justify-items: center;
-  gap: 9px;
-  color: #a5aaa6;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 8px;
-}
-.document-margin-mark strong { color: #647068; font-size: 10px; }
-.document-margin-mark i { width: 1px; height: 38px; background: #d9ddda; }
-.document-margin-mark span { writing-mode: vertical-rl; }
 .document-editor {
-  width: min(820px, calc(100% - 180px));
+  width: min(980px, calc(100% - 64px));
   min-height: 680px;
   margin: 0 auto;
-  padding: 64px 24px 112px;
+  padding: 64px 52px 112px;
   color: #2b302d;
   font-family: "Kaiti SC", "STKaiti", "Songti SC", serif;
   font-size: 16px;
@@ -1453,11 +1429,9 @@ h1 {
   .document-tool-divider { margin-inline: 1px; }
   .document-block-button { padding-inline: 7px; }
   .document-paper, .document-editor { min-height: 560px; }
-  .document-paper::before { left: 26px; }
-  .document-margin-mark { display: none; }
   .document-editor {
     width: 100%;
-    padding: 46px 22px 80px 42px;
+    padding: 46px 22px 80px;
     font-size: 15px;
   }
   .document-editor h2 { font-size: 22px; }
