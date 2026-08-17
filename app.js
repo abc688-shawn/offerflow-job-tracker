@@ -23,6 +23,9 @@ let documentStorageKey = null;
 let personalDocumentContent = "";
 let documentBackendReady = false;
 let documentRevision = 0;
+let documentLocalRevision = 0;
+let documentLocalDirty = false;
+let documentLocalUpdatedAt = 0;
 let pendingDocumentContent = null;
 let documentSyncRunning = false;
 let documentSaveTimer = null;
@@ -81,8 +84,10 @@ const els = {
   documentSyncStatus: document.querySelector("#document-sync-status"),
   documentEditor: document.querySelector("#document-editor"),
   documentCount: document.querySelector("#document-count"),
-  documentBlockFormat: document.querySelector("#document-block-format"),
   documentToolbar: document.querySelector(".document-toolbar"),
+  documentSaveButton: document.querySelector("#document-save-button"),
+  documentLastSaved: document.querySelector("#document-last-saved"),
+  documentOwnerLabel: document.querySelector("#document-owner-label"),
   documentLinkButton: document.querySelector("#document-link-button"),
   documentImageButton: document.querySelector("#document-image-button"),
   documentImageInput: document.querySelector("#document-image-input"),
@@ -289,6 +294,20 @@ function sanitizeDocumentHtml(source) {
 function setDocumentSyncStatus(status, label) {
   els.documentSyncStatus.dataset.state = status;
   els.documentSyncStatus.querySelector("span").textContent = label;
+  els.documentSaveButton.disabled = status === "connecting" || documentSyncRunning;
+}
+
+function updateDocumentSavedTime(timestamp = documentLocalUpdatedAt, prefix = "最近保存") {
+  if (!timestamp) {
+    els.documentLastSaved.textContent = "尚未保存";
+    return;
+  }
+  const time = new Date(timestamp).toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  els.documentLastSaved.textContent = `${prefix} ${time}`;
 }
 
 function updateDocumentCount(content = personalDocumentContent) {
@@ -300,20 +319,35 @@ function updateDocumentCount(content = personalDocumentContent) {
 }
 
 function loadLocalDocument() {
-  if (!documentStorageKey) return "";
+  const emptyDocument = { content: "", dirty: false, revision: 0, updatedAt: 0 };
+  if (!documentStorageKey) return emptyDocument;
   try {
     const saved = JSON.parse(localStorage.getItem(documentStorageKey));
-    return sanitizeDocumentHtml(saved?.content || "");
+    if (!saved || typeof saved !== "object") return emptyDocument;
+    const content = sanitizeDocumentHtml(saved.content || "");
+    const modernCache = saved.version === 2;
+    return {
+      content,
+      dirty: modernCache ? Boolean(saved.dirty) : Boolean(content),
+      revision: modernCache && Number.isInteger(saved.revision) ? saved.revision : -1,
+      updatedAt: modernCache && Number.isFinite(saved.updatedAt) ? saved.updatedAt : 0
+    };
   } catch (error) {
     console.warn("Could not load the local personal document", error);
-    return "";
+    return emptyDocument;
   }
 }
 
-function storeDocumentLocally(content) {
+function storeDocumentLocally() {
   if (!documentStorageKey) return;
   try {
-    localStorage.setItem(documentStorageKey, JSON.stringify({ content }));
+    localStorage.setItem(documentStorageKey, JSON.stringify({
+      version: 2,
+      content: personalDocumentContent,
+      dirty: documentLocalDirty,
+      revision: documentLocalRevision,
+      updatedAt: documentLocalUpdatedAt
+    }));
   } catch (error) {
     console.warn("Could not cache the personal document locally", error);
   }
@@ -321,10 +355,15 @@ function storeDocumentLocally(content) {
 
 function applyPersonalDocument(payload) {
   documentRevision = payload.revision;
+  documentLocalRevision = documentRevision;
+  documentLocalDirty = false;
+  documentLocalUpdatedAt = Date.now();
+  pendingDocumentContent = null;
   personalDocumentContent = sanitizeDocumentHtml(payload.content || "");
-  storeDocumentLocally(personalDocumentContent);
+  storeDocumentLocally();
   els.documentEditor.innerHTML = personalDocumentContent;
   updateDocumentCount();
+  updateDocumentSavedTime(documentLocalUpdatedAt, "已同步");
 }
 
 async function persistPersonalDocument(content) {
@@ -345,6 +384,8 @@ async function persistPersonalDocument(content) {
     throw error;
   }
   documentRevision = payload.revision;
+  documentLocalRevision = documentRevision;
+  documentLocalUpdatedAt = payload.savedAt ? Date.parse(payload.savedAt) : Date.now();
 }
 
 async function flushDocumentQueue() {
@@ -352,29 +393,52 @@ async function flushDocumentQueue() {
   documentSaveTimer = null;
   if (!documentBackendReady || documentSyncRunning || pendingDocumentContent === null) return;
   documentSyncRunning = true;
+  let haltQueue = false;
+  setDocumentSyncStatus("saving", "正在保存");
   try {
     while (pendingDocumentContent !== null) {
       const snapshot = pendingDocumentContent;
       pendingDocumentContent = null;
       await persistPersonalDocument(snapshot);
+      documentLocalDirty = pendingDocumentContent !== null;
+      storeDocumentLocally();
     }
+    documentLocalDirty = false;
+    storeDocumentLocally();
     setDocumentSyncStatus("saved", "已保存");
+    updateDocumentSavedTime();
   } catch (error) {
     console.warn("Could not save the personal document", error);
-    pendingDocumentContent = null;
+    haltQueue = true;
     if (error.status === 401) {
       showAuthScreen("登录已失效，请重新登录");
     } else if (error.status === 409 && error.payload?.latest) {
-      applyPersonalDocument(error.payload.latest);
-      setDocumentSyncStatus("saved", "已同步新版本");
-      showToast("另一台设备已更新个人文档，已载入最新版本");
+      const latestContent = sanitizeDocumentHtml(error.payload.latest.content || "");
+      if (latestContent === personalDocumentContent) {
+        applyPersonalDocument(error.payload.latest);
+        setDocumentSyncStatus("saved", "已保存");
+      } else {
+        documentRevision = error.payload.latest.revision;
+        documentLocalRevision = documentRevision;
+        documentLocalDirty = true;
+        pendingDocumentContent = personalDocumentContent;
+        storeDocumentLocally();
+        setDocumentSyncStatus("error", "需要重新保存");
+        els.documentLastSaved.textContent = "检测到其他设备的更新";
+        showToast("个人文档存在新版本，请确认内容后再次保存");
+      }
     } else {
       documentBackendReady = false;
-      setDocumentSyncStatus("local", "仅本地保存");
+      documentLocalDirty = true;
+      pendingDocumentContent = personalDocumentContent;
+      storeDocumentLocally();
+      setDocumentSyncStatus("local", "草稿已保留");
+      els.documentLastSaved.textContent = "网络恢复后可再次保存";
     }
   } finally {
     documentSyncRunning = false;
-    if (pendingDocumentContent !== null) void flushDocumentQueue();
+    setDocumentSyncStatus(els.documentSyncStatus.dataset.state, els.documentSyncStatus.querySelector("span").textContent);
+    if (!haltQueue && pendingDocumentContent !== null) void flushDocumentQueue();
   }
 }
 
@@ -387,16 +451,21 @@ function captureDocumentDraft() {
     showToast("个人文档已超过容量限制，请删除部分图片");
     return;
   }
+  if (content === personalDocumentContent && !documentLocalDirty) return;
+  if (!documentLocalDirty) documentLocalRevision = documentRevision;
   personalDocumentContent = content;
-  storeDocumentLocally(content);
+  documentLocalDirty = true;
+  documentLocalUpdatedAt = Date.now();
+  storeDocumentLocally();
   pendingDocumentContent = content;
+  els.documentLastSaved.textContent = "本地草稿已保留";
   if (!documentBackendReady) {
-    setDocumentSyncStatus("local", "仅本地保存");
+    setDocumentSyncStatus("local", "等待同步");
     return;
   }
-  setDocumentSyncStatus("saving", "保存中");
+  setDocumentSyncStatus("saving", "待保存");
   window.clearTimeout(documentSaveTimer);
-  documentSaveTimer = window.setTimeout(() => void flushDocumentQueue(), 700);
+  documentSaveTimer = window.setTimeout(() => void flushDocumentQueue(), 350);
 }
 
 async function connectPersonalDocument() {
@@ -411,21 +480,41 @@ async function connectPersonalDocument() {
     const payload = await response.json();
     documentBackendReady = true;
     documentRevision = payload.revision;
-    if (payload.initialized) {
+    const remoteContent = sanitizeDocumentHtml(payload.content || "");
+    if (documentLocalDirty && personalDocumentContent === remoteContent) {
       applyPersonalDocument(payload);
+      setDocumentSyncStatus("saved", "已保存");
+    } else if (documentLocalDirty && documentLocalRevision === payload.revision) {
+      pendingDocumentContent = personalDocumentContent;
+      setDocumentSyncStatus("saving", "恢复草稿");
+      await flushDocumentQueue();
+      showToast("未完成同步的本地草稿已恢复");
+    } else if (documentLocalDirty) {
+      documentLocalRevision = payload.revision;
+      pendingDocumentContent = personalDocumentContent;
+      storeDocumentLocally();
+      setDocumentSyncStatus("error", "需要重新保存");
+      els.documentLastSaved.textContent = "云端已有其他版本";
+    } else if (payload.initialized) {
+      applyPersonalDocument(payload);
+      setDocumentSyncStatus("saved", "已保存");
     } else {
-      await persistPersonalDocument(personalDocumentContent);
+      documentLocalDirty = true;
+      documentLocalRevision = payload.revision;
+      pendingDocumentContent = personalDocumentContent;
+      storeDocumentLocally();
+      await flushDocumentQueue();
     }
-    setDocumentSyncStatus("saved", "已保存");
   } catch (error) {
     documentBackendReady = false;
     console.warn("Personal document backend is unavailable", error);
-    setDocumentSyncStatus("local", "仅本地保存");
+    setDocumentSyncStatus("local", documentLocalDirty ? "草稿已保留" : "仅本地保存");
+    els.documentLastSaved.textContent = documentLocalDirty ? "网络恢复后可再次保存" : "云端暂时不可用";
   }
 }
 
 async function refreshPersonalDocument() {
-  if (!currentUser || !documentBackendReady || documentSyncRunning || pendingDocumentContent !== null) return;
+  if (!currentUser || !documentBackendReady || documentLocalDirty || documentSyncRunning || pendingDocumentContent !== null) return;
   try {
     const response = await fetch("/api/document", { cache: "no-store" });
     if (response.status === 401) {
@@ -940,12 +1029,61 @@ function normalizeDocumentUrl(value) {
 }
 
 function updateDocumentToolbarState() {
-  if (!els.documentEditor.contains(document.activeElement) && document.activeElement !== els.documentEditor) return;
   els.documentToolbar.querySelectorAll("[data-document-command]").forEach((button) => {
-    button.classList.toggle("active", document.queryCommandState(button.dataset.documentCommand));
+    const active = document.queryCommandState(button.dataset.documentCommand);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
   });
   const block = String(document.queryCommandValue("formatBlock") || "p").replace(/[<>]/g, "").toLowerCase();
-  if (["p", "h2", "h3", "blockquote"].includes(block)) els.documentBlockFormat.value = block;
+  const activeBlock = ["h2", "h3", "blockquote"].includes(block) ? block : "p";
+  els.documentToolbar.querySelectorAll("[data-document-block]").forEach((button) => {
+    const active = button.dataset.documentBlock === activeBlock;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function wrapDocumentSelection(tagName) {
+  const range = currentDocumentRange();
+  if (range.collapsed) return false;
+  const wrapper = document.createElement(tagName);
+  wrapper.append(range.extractContents());
+  range.insertNode(wrapper);
+  range.selectNodeContents(wrapper);
+  restoreDocumentRange(range);
+  lastDocumentRange = range.cloneRange();
+  return true;
+}
+
+function applyDocumentCommand(command) {
+  restoreDocumentRange();
+  const applied = document.execCommand(command, false);
+  if (!applied && command === "bold") wrapDocumentSelection("strong");
+  if (!applied && command === "italic") wrapDocumentSelection("em");
+  rememberDocumentRange();
+  captureDocumentDraft();
+  updateDocumentToolbarState();
+}
+
+function applyDocumentBlock(tagName) {
+  restoreDocumentRange();
+  const applied = document.execCommand("formatBlock", false, `<${tagName}>`);
+  if (!applied) document.execCommand("formatBlock", false, tagName);
+  rememberDocumentRange();
+  captureDocumentDraft();
+  updateDocumentToolbarState();
+}
+
+async function savePersonalDocumentNow() {
+  const currentContent = sanitizeDocumentHtml(els.documentEditor.innerHTML);
+  if (currentContent !== personalDocumentContent) captureDocumentDraft();
+  if (!documentLocalDirty && pendingDocumentContent === null) {
+    showToast("个人文档已是最新版本");
+    return;
+  }
+  if (!documentBackendReady) await connectPersonalDocument();
+  else await flushDocumentQueue();
+  if (!documentLocalDirty) showToast("个人文档已保存");
 }
 
 function showAuthScreen(message = "") {
@@ -958,6 +1096,9 @@ function showAuthScreen(message = "") {
   personalDocumentContent = "";
   documentBackendReady = false;
   documentRevision = 0;
+  documentLocalRevision = 0;
+  documentLocalDirty = false;
+  documentLocalUpdatedAt = 0;
   pendingDocumentContent = null;
   documentSyncRunning = false;
   lastDocumentRange = null;
@@ -982,7 +1123,11 @@ async function activateSession(user) {
   storageKey = `offerflow-data-v2:${user.id}`;
   documentStorageKey = `offerflow-document-v1:${user.id}`;
   state = loadLocalState();
-  personalDocumentContent = loadLocalDocument();
+  const localDocument = loadLocalDocument();
+  personalDocumentContent = localDocument.content;
+  documentLocalRevision = localDocument.revision;
+  documentLocalDirty = localDocument.dirty;
+  documentLocalUpdatedAt = localDocument.updatedAt;
   backendReady = false;
   backendRevision = 0;
   pendingBackendSnapshot = null;
@@ -992,8 +1137,10 @@ async function activateSession(user) {
   documentSyncRunning = false;
   els.documentEditor.innerHTML = personalDocumentContent;
   updateDocumentCount();
+  updateDocumentSavedTime(documentLocalUpdatedAt, documentLocalDirty ? "本地草稿" : "最近保存");
   els.profileUsername.textContent = user.username;
   els.profileAvatar.textContent = Array.from(user.username)[0]?.toUpperCase() || "个";
+  els.documentOwnerLabel.textContent = `${user.username} · 私人文档`;
   els.passwordButton.hidden = !authConfig.passwordChangeEnabled;
   window.OfferFlowAuth?.hide();
   els.appShell.hidden = false;
@@ -1174,22 +1321,18 @@ els.documentEditor.addEventListener("drop", (event) => {
 });
 
 els.documentToolbar.addEventListener("mousedown", (event) => {
+  rememberDocumentRange();
   if (event.target.closest("button")) event.preventDefault();
 });
 els.documentToolbar.addEventListener("click", (event) => {
+  const blockButton = event.target.closest("[data-document-block]");
+  if (blockButton) {
+    applyDocumentBlock(blockButton.dataset.documentBlock);
+    return;
+  }
   const button = event.target.closest("[data-document-command]");
   if (!button) return;
-  restoreDocumentRange();
-  document.execCommand(button.dataset.documentCommand, false);
-  rememberDocumentRange();
-  updateDocumentToolbarState();
-  captureDocumentDraft();
-});
-els.documentBlockFormat.addEventListener("change", (event) => {
-  restoreDocumentRange();
-  document.execCommand("formatBlock", false, event.target.value);
-  rememberDocumentRange();
-  captureDocumentDraft();
+  applyDocumentCommand(button.dataset.documentCommand);
 });
 els.documentLinkButton.addEventListener("click", () => {
   const range = currentDocumentRange();
@@ -1214,6 +1357,7 @@ els.documentImageInput.addEventListener("change", () => {
   void insertDocumentImages(els.documentImageInput.files, currentDocumentRange());
   els.documentImageInput.value = "";
 });
+els.documentSaveButton.addEventListener("click", () => void savePersonalDocumentNow());
 document.addEventListener("selectionchange", () => {
   rememberDocumentRange();
   updateDocumentToolbarState();
@@ -1284,5 +1428,11 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     void refreshBackendState();
     void refreshPersonalDocument();
+  } else if (documentLocalDirty) {
+    void flushDocumentQueue();
   }
+});
+window.addEventListener("pagehide", () => {
+  const currentContent = sanitizeDocumentHtml(els.documentEditor.innerHTML);
+  if (currentUser && currentContent !== personalDocumentContent) captureDocumentDraft();
 });

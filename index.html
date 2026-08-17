@@ -144,13 +144,23 @@
 
       <section id="document" class="document-panel" aria-labelledby="document-title">
         <div class="document-heading">
-          <div>
-            <p class="panel-kicker">PERSONAL NOTES</p>
-            <h2 id="document-title">个人文档</h2>
+          <div class="document-heading-identity">
+            <span class="document-notebook-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            <div>
+              <p class="document-kicker">PRIVATE WORKSPACE</p>
+              <h2 id="document-title">个人求职文档</h2>
+              <p class="document-subtitle">投递规则与求职备忘</p>
+            </div>
           </div>
-          <span id="document-sync-status" class="sync-status document-sync-status" data-state="connecting" role="status" aria-live="polite">
-            <i aria-hidden="true"></i><span>连接中</span>
-          </span>
+          <div class="document-heading-actions">
+            <div class="document-save-meta">
+              <span id="document-sync-status" class="sync-status document-sync-status" data-state="connecting" role="status" aria-live="polite">
+                <i aria-hidden="true"></i><span>连接中</span>
+              </span>
+              <small id="document-last-saved">正在读取个人文档</small>
+            </div>
+            <button id="document-save-button" class="document-save-button" type="button">保存</button>
+          </div>
         </div>
 
         <div class="document-toolbar" role="toolbar" aria-label="文档编辑工具">
@@ -159,15 +169,13 @@
             <button class="document-tool-button" type="button" data-document-command="redo" aria-label="重做" title="重做">↷</button>
           </div>
           <span class="document-tool-divider" aria-hidden="true"></span>
-          <label class="document-format-select">
-            <span class="sr-only">段落样式</span>
-            <select id="document-block-format" aria-label="段落样式" title="段落样式">
-              <option value="p">正文</option>
-              <option value="h2">一级标题</option>
-              <option value="h3">二级标题</option>
-              <option value="blockquote">引用</option>
-            </select>
-          </label>
+          <div class="document-block-tools" role="group" aria-label="段落样式">
+            <button class="document-block-button active" type="button" data-document-block="p" aria-label="正文" title="正文">正文</button>
+            <button class="document-block-button" type="button" data-document-block="h2" aria-label="一级标题" title="一级标题">H1</button>
+            <button class="document-block-button" type="button" data-document-block="h3" aria-label="二级标题" title="二级标题">H2</button>
+            <button class="document-block-button document-quote-button" type="button" data-document-block="blockquote" aria-label="引用" title="引用">“</button>
+          </div>
+          <span class="document-tool-divider" aria-hidden="true"></span>
           <div class="document-tool-group">
             <button class="document-tool-button" type="button" data-document-command="bold" aria-label="粗体" title="粗体"><strong>B</strong></button>
             <button class="document-tool-button" type="button" data-document-command="italic" aria-label="斜体" title="斜体"><em>I</em></button>
@@ -176,13 +184,14 @@
           </div>
           <span class="document-tool-divider" aria-hidden="true"></span>
           <div class="document-tool-group">
-            <button id="document-link-button" class="document-tool-button" type="button" aria-label="插入链接" title="插入链接">⌁</button>
-            <button id="document-image-button" class="document-tool-button" type="button" aria-label="插入图片" title="插入图片">▧</button>
+            <button id="document-link-button" class="document-tool-button document-insert-button" type="button" aria-label="插入链接" title="插入链接">链接</button>
+            <button id="document-image-button" class="document-tool-button document-insert-button" type="button" aria-label="插入图片" title="插入图片">图片</button>
           </div>
           <input id="document-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
         </div>
 
         <div class="document-paper">
+          <div class="document-margin-mark" aria-hidden="true"><strong>OF</strong><i></i><span>NOTES</span></div>
           <div
             id="document-editor"
             class="document-editor"
@@ -196,7 +205,7 @@
         </div>
         <div class="document-footer">
           <span id="document-count">0 字</span>
-          <span>自动保存</span>
+          <span id="document-owner-label">个人文档</span>
         </div>
       </section>
 
